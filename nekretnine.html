@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html lang="hr">
+<head>
+  <meta charset="UTF-8" />
+  <title>Nekretnine i Inflacija | Vizualizacija</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/noUiSlider/15.7.1/nouislider.min.js"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/noUiSlider/15.7.1/nouislider.min.css" />
+  <style>
+    body {
+      background: #f8f9fa;
+    }
+    .chart-container {
+      height: 300px;
+      margin-bottom: 20px;
+    }
+    .tooltip {
+      position: absolute;
+      background: rgba(0, 0, 0, 0.75);
+      color: #fff;
+      padding: 5px 10px;
+      border-radius: 4px;
+      pointer-events: none;
+      font-size: 13px;
+    }
+    svg {
+      overflow: visible;
+    }
+    .filter-container {
+      margin-top: 20px;
+    }
+    .nouislider {
+      margin: 20px 0;
+    }
+    .filter-input {
+      width: 100px;
+      margin-right: 10px;
+    }
+    .highlight {
+      r: 6;
+      fill: #ff0000;
+    }
+  </style>
+</head>
+<body>
+  <div id="header"></div>
+  <div class="container mt-4">
+    <div class="row">
+      <div class="col-md-9">
+        <h3>Case-Shiller US National Home Price Index</h3>
+        <div id="chart-housing" class="chart-container bg-white shadow rounded p-3"></div>
+        <h3>US Inflacija (CPI)</h3>
+        <div id="chart-inflation" class="chart-container bg-white shadow rounded p-3"></div>
+      </div>
+      <div class="col-md-3">
+        <h5>O projektu</h5>
+        <p>Prikaz trenda cijena nekretnina (Case-Shiller) i inflacije (CPI) u SAD-u od 1987. do danas.</p>
+        <p>Izvori: <code>CSUSHPISA.csv</code>, <code>US_inflation_rates.csv</code></p>
+        <div class="filter-container">
+          <h6>Filteri</h6>
+          <div>
+            <label for="period-select" class="form-label">Odaberi period:</label>
+            <select id="period-select" class="form-select mb-3">
+              <option value="all">Svi podaci (1987–danas)</option>
+              <option value="2000-2007">Prije krize (2000–2007)</option>
+              <option value="2007-2012">Financijska kriza (2007–2012)</option>
+              <option value="2020-2025">Post-COVID (2020–danas)</option>
+            </select>
+          </div>
+          <div>
+            <label class="form-label">Raspon godina:</label>
+            <div id="year-slider"></div>
+            <div id="year-range" class="mb-3"></div>
+          </div>
+          <div>
+            <label class="form-label">Raspon Case-Shiller indeksa:</label>
+            <div class="d-flex mb-3">
+              <input type="number" id="min-housing" class="form-control filter-input" placeholder="Min" step="0.1">
+              <input type="number" id="max-housing" class="form-control filter-input" placeholder="Max" step="0.1">
+            </div>
+          </div>
+          <div>
+            <label class="form-label">Raspon CPI:</label>
+            <div class="d-flex mb-3">
+              <input type="number" id="min-inflation" class="form-control filter-input" placeholder="Min" step="0.1">
+              <input type="number" id="max-inflation" class="form-control filter-input" placeholder="Max" step="0.1">
+            </div>
+          </div>
+          <button id="apply-value-filter" class="btn btn-primary btn-sm">Primijeni</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="tooltip" id="tooltip" style="opacity: 0;"></div>
+
+  <script>
+    const margin = { top: 20, right: 20, bottom: 50, left: 60 };
+    const width = 800 - margin.left - margin.right;
+    const height = 200 - margin.top - margin.bottom;
+
+    const svgHousing = d3.select("#chart-housing")
+      .append("svg")
+      .attr("width", width + margin.left + margin.right)
+      .attr("height", height + margin.top + margin.bottom)
+      .append("g")
+      .attr("transform", `translate(${margin.left},${margin.top})`);
+
+    const svgInflation = d3.select("#chart-inflation")
+      .append("svg")
+      .attr("width", width + margin.left + margin.right)
+      .attr("height", height + margin.top + margin.bottom)
+      .append("g")
+      .attr("transform", `translate(${margin.left},${margin.top})`);
+
+    const tooltip = d3.select("#tooltip");
+    let housingData = [];
+    let inflationData = [];
+    let slider = null;
+
+    // Funkcija za crtanje grafika
+    function drawCharts(filteredHousing, filteredInflation) {
+      console.log("Crta se Case-Shiller:", filteredHousing.length, "redaka");
+      console.log("Crta se inflacija:", filteredInflation.length, "redaka");
+
+      // Očisti grafike
+      svgHousing.selectAll("*").remove();
+      svgInflation.selectAll("*").remove();
+
+      // Zajednička x-skala
+      const allDates = [...filteredHousing.map(d => d.date), ...filteredInflation.map(d => d.date)];
+      const x = d3.scaleTime()
+        .domain(d3.extent(allDates))
+        .range([0, width]);
+
+      // Y-skale
+      const yHousing = d3.scaleLinear()
+        .domain([0, d3.max(filteredHousing, d => d.value) * 1.05])
+        .range([height, 0]);
+
+      const yInflation = d3.scaleLinear()
+        .domain([0, d3.max(filteredInflation, d => d.value) * 1.05])
+        .range([height, 0]);
+
+      // Osi
+      const xAxis = d3.axisBottom(x).ticks(10).tickFormat(d3.timeFormat("%Y"));
+      const yAxisHousing = d3.axisLeft(yHousing);
+      const yAxisInflation = d3.axisLeft(yInflation);
+
+      svgHousing.append("g")
+        .attr("transform", `translate(0,${height})`)
+        .call(xAxis);
+
+      svgHousing.append("g")
+        .call(yAxisHousing);
+
+      svgInflation.append("g")
+        .attr("transform", `translate(0,${height})`)
+        .call(xAxis);
+
+      svgInflation.append("g")
+        .call(yAxisInflation);
+
+      // Oznake osi
+      svgHousing.append("text")
+        .attr("x", width / 2)
+        .attr("y", height + 40)
+        .attr("text-anchor", "middle")
+        .text("Godina");
+
+      svgHousing.append("text")
+        .attr("transform", "rotate(-90)")
+        .attr("x", -height / 2)
+        .attr("y", -40)
+        .attr("text-anchor", "middle")
+        .text("Case-Shiller Indeks");
+
+      svgInflation.append("text")
+        .attr("x", width / 2)
+        .attr("y", height + 40)
+        .attr("text-anchor", "middle")
+        .text("Godina");
+
+      svgInflation.append("text")
+        .attr("transform", "rotate(-90)")
+        .attr("x", -height / 2)
+        .attr("y", -40)
+        .attr("text-anchor", "middle")
+        .text("CPI");
+
+      // Linije
+      const lineHousing = d3.line()
+        .x(d => x(d.date))
+        .y(d => yHousing(d.value))
+        .defined(d => d.date && !isNaN(d.value));
+
+      const lineInflation = d3.line()
+        .x(d => x(d.date))
+        .y(d => yInflation(d.value))
+        .defined(d => d.date && !isNaN(d.value));
+
+      const pathHousing = svgHousing.append("path")
+        .datum(filteredHousing)
+        .attr("fill", "none")
+        .attr("stroke", "#007bff")
+        .attr("stroke-width", 2)
+        .attr("d", lineHousing);
+
+      const pathInflation = svgInflation.append("path")
+        .datum(filteredInflation)
+        .attr("fill", "none")
+        .attr("stroke", "#ff5733")
+        .attr("stroke-width", 2)
+        .attr("d", lineInflation);
+
+      // Animacija linija
+      const totalLengthHousing = pathHousing.node().getTotalLength();
+      pathHousing
+        .attr("stroke-dasharray", totalLengthHousing + " " + totalLengthHousing)
+        .attr("stroke-dashoffset", totalLengthHousing)
+        .transition()
+        .duration(2000)
+        .ease(d3.easeCubic)
+        .attr("stroke-dashoffset", 0);
+
+      const totalLengthInflation = pathInflation.node().getTotalLength();
+      pathInflation
+        .attr("stroke-dasharray", totalLengthInflation + " " + totalLengthInflation)
+        .attr("stroke-dashoffset", totalLengthInflation)
+        .transition()
+        .duration(2000)
+        .ease(d3.easeCubic)
+        .attr("stroke-dashoffset", 0);
+
+      // Točke s tooltipovima
+      const formatDate = d3.timeFormat("%Y-%m-%d");
+      svgHousing.selectAll(".housing-point")
+        .data(filteredHousing.filter((_, i) => i % 12 === 0))
+        .enter()
+        .append("circle")
+        .attr("class", "housing-point")
+        .attr("cx", d => x(d.date))
+        .attr("cy", d => yHousing(d.value))
+        .attr("r", 3)
+        .attr("fill", "#007bff")
+        .on("mouseover", (event, d) => {
+          tooltip.transition().duration(200).style("opacity", 0.9);
+          const inflationMatch = filteredInflation.find(i => formatDate(i.date) === formatDate(d.date));
+          const inflationValue = inflationMatch ? inflationMatch.value.toFixed(2) : "Nema podataka";
+          tooltip.html(`Datum: ${formatDate(d.date)}<br>Case-Shiller: ${d.value.toFixed(2)}<br>CPI: ${inflationValue}`)
+            .style("left", (event.pageX + 10) + "px")
+            .style("top", (event.pageY - 28) + "px");
+
+          // Istakni točku na inflacijskom grafu
+          svgInflation.selectAll(".inflation-point")
+            .filter(i => formatDate(i.date) === formatDate(d.date))
+            .attr("class", "inflation-point highlight");
+        })
+        .on("mouseout", () => {
+          tooltip.transition().duration(300).style("opacity", 0);
+          svgInflation.selectAll(".inflation-point")
+            .attr("class", "inflation-point");
+        });
+
+      svgInflation.selectAll(".inflation-point")
+        .data(filteredInflation.filter((_, i) => i % 12 === 0))
+        .enter()
+        .append("circle")
+        .attr("class", "inflation-point")
+        .attr("cx", d => x(d.date))
+        .attr("cy", d => yInflation(d.value))
+        .attr("r", 3)
+        .attr("fill", "#ff5733")
+        .on("mouseover", (event, d) => {
+          tooltip.transition().duration(200).style("opacity", 0.9);
+          const housingMatch = filteredHousing.find(h => formatDate(h.date) === formatDate(d.date));
+          const housingValue = housingMatch ? housingMatch.value.toFixed(2) : "Nema podataka";
+          tooltip.html(`Datum: ${formatDate(d.date)}<br>Case-Shiller: ${housingValue}<br>CPI: ${d.value.toFixed(2)}`)
+            .style("left", (event.pageX + 10) + "px")
+            .style("top", (event.pageY - 28) + "px");
+
+          // Istakni točku na Case-Shiller grafu
+          svgHousing.selectAll(".housing-point")
+            .filter(h => formatDate(h.date) === formatDate(d.date))
+            .attr("class", "housing-point highlight");
+        })
+        .on("mouseout", () => {
+          tooltip.transition().duration(300).style("opacity", 0);
+          svgHousing.selectAll(".housing-point")
+            .attr("class", "housing-point");
+        });
+    }
+
+    // Funkcija za filtriranje podataka
+    function filterData() {
+      console.log("Pokreće se filtriranje...");
+      if (!slider) {
+        console.error("Slider nije inicijaliziran!");
+        alert("Klizač za godine nije spreman. Pričekaj da se podaci učitaju.");
+        return;
+      }
+
+      let filteredHousing = housingData;
+      let filteredInflation = inflationData;
+
+      // Filter za raspon godina
+      const yearRange = slider.noUiSlider.get().map(Number);
+      console.log("Raspon godina:", yearRange);
+      filteredHousing = filteredHousing.filter(d => {
+        const year = d.date.getFullYear();
+        return year >= yearRange[0] && year <= yearRange[1];
+      });
+      filteredInflation = filteredInflation.filter(d => {
+        const year = d.date.getFullYear();
+        return year >= yearRange[0] && year <= yearRange[1];
+      });
+
+      // Filter za raspon Case-Shiller
+      const minHousingInput = document.getElementById("min-housing").value;
+      const maxHousingInput = document.getElementById("max-housing").value;
+      const minHousing = minHousingInput ? +minHousingInput : -Infinity;
+      const maxHousing = maxHousingInput ? +maxHousingInput : Infinity;
+      console.log("Raspon Case-Shiller:", { minHousing, maxHousing });
+      filteredHousing = filteredHousing.filter(d => d.value >= minHousing && d.value <= maxHousing);
+
+      // Filter za raspon CPI
+      const minInflationInput = document.getElementById("min-inflation").value;
+      const maxInflationInput = document.getElementById("max-inflation").value;
+      const minInflation = minInflationInput ? +minInflationInput : -Infinity;
+      const maxInflation = maxInflationInput ? +maxInflationInput : Infinity;
+      console.log("Raspon CPI:", { minInflation, maxInflation });
+      filteredInflation = filteredInflation.filter(d => d.value >= minInflation && d.value <= maxInflation);
+
+      console.log("Filtrirani Case-Shiller:", filteredHousing.length, "redaka");
+      console.log("Filtrirani CPI:", filteredInflation.length, "redaka");
+
+      if (filteredHousing.length === 0 || filteredInflation.length === 0) {
+        alert("Nema podataka za odabrane filtere. Podesi filtere.");
+        return;
+      }
+
+      drawCharts(filteredHousing, filteredInflation);
+    }
+
+    // Učitaj oba CSV-a
+    Promise.all([
+      d3.csv("CSUSHPISA.csv"),
+      d3.csv("US_inflation_rates.csv")
+    ]).then(([housing, inflation]) => {
+      // Parsiraj Case-Shiller
+      housing = housing.filter(d => {
+        if (!d.observation_date || !d.CSUSHPISA || isNaN(+d.CSUSHPISA)) return false;
+        const date = d3.timeParse("%Y-%m-%d")(d.observation_date.trim());
+        return date && date.getFullYear() >= 1987;
+      });
+      housing.forEach(d => {
+        d.date = d3.timeParse("%Y-%m-%d")(d.observation_date.trim());
+        d.value = +d.CSUSHPISA;
+      });
+
+      // Parsiraj inflaciju
+      inflation = inflation.filter(d => {
+        if (!d.date || !d.value || isNaN(+d.value)) return false;
+        const date = d3.timeParse("%Y-%m-%d")(d.date.trim());
+        return date && date.getFullYear() >= 1987;
+      });
+      inflation.forEach(d => {
+        d.date = d3.timeParse("%Y-%m-%d")(d.date.trim());
+        d.value = +d.value;
+      });
+
+      console.log("Parsirani Case-Shiller:", housing.slice(0, 5));
+      console.log("Parsirani CPI:", inflation.slice(0, 5));
+
+      if (housing.length === 0 || inflation.length === 0) {
+        alert("Nema valjanih podataka u CSV-ovima nakon filtriranja od 1987. Provjeri format podataka.");
+        return;
+      }
+      if (housing.some(d => !d.date) || inflation.some(d => !d.date)) {
+        alert("Greška u parsiranju datuma. Provjeri stupce datuma.");
+        return;
+      }
+      if (housing.some(d => isNaN(d.value)) || inflation.some(d => isNaN(d.value))) {
+        alert("Greška u vrijednostima. Provjeri podatke.");
+        return;
+      }
+
+      housingData = housing;
+      inflationData = inflation;
+
+      drawCharts(housingData, inflationData);
+
+      // Inicijaliziraj klizač za godine
+      slider = document.getElementById("year-slider");
+      const allDates = [...housingData.map(d => d.date), ...inflationData.map(d => d.date)];
+      const minYear = 1987; // Fiksno od 1987.
+      const maxYear = d3.max(allDates, d => d.getFullYear());
+      noUiSlider.create(slider, {
+        start: [minYear, maxYear],
+        connect: true,
+        range: {
+          'min': minYear,
+          'max': maxYear
+        },
+        step: 1,
+        format: {
+          to: value => Math.round(value),
+          from: value => Number(value)
+        }
+      });
+
+      const yearRangeDisplay = document.getElementById("year-range");
+      slider.noUiSlider.on("update", (values) => {
+        yearRangeDisplay.textContent = `${values[0]} - ${values[1]}`;
+      });
+
+      slider.noUiSlider.on("change", filterData);
+
+      // Inicijaliziraj padajući izbornik za periode
+      const periodSelect = document.getElementById("period-select");
+      periodSelect.addEventListener("change", () => {
+        const value = periodSelect.value;
+        let startYear, endYear;
+        if (value === "all") {
+          startYear = minYear;
+          endYear = maxYear;
+        } else {
+          [startYear, endYear] = value.split("-").map(Number);
+        }
+        slider.noUiSlider.set([startYear, endYear]);
+        filterData();
+      });
+
+      // Inicijaliziraj filter za vrijednosti
+      const applyButton = document.getElementById("apply-value-filter");
+      applyButton.addEventListener("click", () => {
+        console.log("Kliknuto na Primijeni");
+        filterData();
+      });
+    }).catch(error => {
+      console.error("Greška pri učitavanju CSV-ova:", error);
+      alert("Ne mogu učitati CSV-ove. Provjeri jesu li datoteke u direktoriju.");
+    });
+  </script>
+</body>
+</html>

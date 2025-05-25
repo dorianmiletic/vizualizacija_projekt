@@ -1,178 +1,55 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="hr">
 <head>
   <meta charset="UTF-8" />
-  <title>Stock Trends Animation (2008–2023)</title>
-  <script src="https://d3js.org/d3.v7.min.js"></script>
-  <style>
-    body { font-family: sans-serif; margin: 20px; }
-    .tooltip {
-      position: absolute;
-      background: #333;
-      color: #fff;
-      padding: 5px 10px;
-      border-radius: 4px;
-      pointer-events: none;
-      font-size: 12px;
-    }
-    select, button {
-      margin: 10px 5px;
-      padding: 5px;
-    }
-  </style>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Vizualizacija Financijskih Podataka</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet" />
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css" rel="stylesheet" />
+  <link href="styles.css" rel="stylesheet" />
 </head>
-<body>
+<body class="bg-gradient">
 
-  <h2>Stock Index Animation (2008–2023)</h2>
+  <!-- Header -->
+  <div id="header"></div>
 
-  <label for="tickerSelect">Choose indices:</label>
-  <select id="tickerSelect" multiple size="6">
-    <option value="^GSPC">S&P 500 (^GSPC)</option>
-    <option value="^IXIC">NASDAQ (^IXIC)</option>
-    <option value="^DJI">Dow Jones (^DJI)</option>
-    <option value="^FTSE">FTSE (^FTSE)</option>
-    <option value="^N225">Nikkei (^N225)</option>
-    <option value="000001.SS">SSE (000001.SS)</option>
-    <option value="^NSEI">NSEI (^NSEI)</option>
-    <option value="^BSESN">BSE Sensex (^BSESN)</option>
-    <option value="^NYA">NYSE (^NYA)</option>
-    <option value="^N100">Euronext 100 (^N100)</option>
-  </select>
+  <main class="container text-center py-5">
+    <h1 class="display-4 fw-bold mb-4">Vizualizacija Financijskih Podataka</h1>
+    <p class="lead text-muted mb-5">Istraži ključne globalne ekonomske trendove od 2008. do danas</p>
 
-  <button id="play">Play</button>
-  <button id="reset">Reset</button>
+    <div class="row g-4 justify-content-center">
+      <div class="col-md-6 col-lg-3">
+        <a href="inflacija.html" class="btn btn-outline-primary w-100 py-3 shadow-sm rounded-4">
+          <i class="bi bi-currency-exchange fs-3"></i><br>
+          Inflacija
+        </a>
+      </div>
+      <div class="col-md-6 col-lg-3">
+        <a href="nekretnine.html" class="btn btn-outline-success w-100 py-3 shadow-sm rounded-4">
+          <i class="bi bi-house-door-fill fs-3"></i><br>
+          Nekretnine
+        </a>
+      </div>
+      <div class="col-md-6 col-lg-3">
+        <a href="gdp.html" class="btn btn-outline-warning w-100 py-3 shadow-sm rounded-4 text-dark">
+          <i class="bi bi-bar-chart-line-fill fs-3"></i><br>
+          BDP
+        </a>
+      </div>
+      <div class="col-md-6 col-lg-3">
+        <a href="burza.html" class="btn btn-outline-danger w-100 py-3 shadow-sm rounded-4">
+          <i class="bi bi-graph-up-arrow fs-3"></i><br>
+          Burza
+        </a>
+      </div>
+    </div>
+  </main>
 
-  <div id="chart"></div>
+  <footer class="text-center text-muted py-4 border-top mt-5">
+    &copy; 2025 - Vizualizacija Financija
+  </footer>
 
-  <script>
-    const allTickers = ['^GSPC', '^IXIC', '^DJI', '^FTSE', '^N225', '000001.SS', '^NSEI', '^BSESN', '^NYA', '^N100'];
-    const years = d3.range(2008, 2024);
-    const colors = d3.scaleOrdinal().domain(allTickers).range(d3.schemeTableau10);
-
-    const svgWidth = 1000, svgHeight = 500, margin = { top: 40, right: 150, bottom: 50, left: 60 };
-    const width = svgWidth - margin.left - margin.right;
-    const height = svgHeight - margin.top - margin.bottom;
-
-    const svg = d3.select("#chart")
-      .append("svg")
-      .attr("width", svgWidth)
-      .attr("height", svgHeight)
-      .append("g")
-      .attr("transform", `translate(${margin.left},${margin.top})`);
-
-    const tooltip = d3.select("body").append("div").attr("class", "tooltip").style("opacity", 0);
-
-    let fullData = [];
-    let animInterval;
-
-    // Load all data
-    Promise.all(years.map(y => d3.csv(`data_${y}.csv`))).then(files => {
-      files.forEach((data, i) => {
-        const year = years[i];
-        data.forEach(d => {
-          d.Close = +d.Close;
-          d.Year = year;
-        });
-        fullData.push(...data.filter(d => allTickers.includes(d.Ticker)));
-      });
-
-      // Preprocess to get average Close per year per ticker
-      const grouped = d3.groups(fullData, d => d.Ticker, d => d.Year);
-      const processed = [];
-      grouped.forEach(([ticker, yearGroup]) => {
-        yearGroup.forEach(([year, records]) => {
-          const avg = d3.mean(records, d => d.Close);
-          processed.push({ ticker, year: +year, close: avg });
-        });
-      });
-
-      init(processed);
-    });
-
-    function init(data) {
-      const x = d3.scaleLinear().domain([2008, 2023]).range([0, width]);
-      const y = d3.scaleLinear().domain([0, d3.max(data, d => d.close) * 1.1]).range([height, 0]);
-
-      const xAxis = svg.append("g").attr("transform", `translate(0,${height})`).call(d3.axisBottom(x).tickFormat(d3.format("d")));
-      const yAxis = svg.append("g").call(d3.axisLeft(y));
-
-      svg.append("text")
-        .attr("x", width / 2)
-        .attr("y", height + 40)
-        .attr("text-anchor", "middle")
-        .text("Year");
-
-      svg.append("text")
-        .attr("transform", "rotate(-90)")
-        .attr("x", -height / 2)
-        .attr("y", -40)
-        .attr("text-anchor", "middle")
-        .text("Average Close");
-
-      let linesGroup = svg.append("g").attr("class", "lines");
-
-      // Event listeners
-      document.getElementById("play").onclick = () => {
-        const selected = Array.from(document.getElementById("tickerSelect").selectedOptions).map(o => o.value);
-        if (!selected.length) return alert("Select at least one index.");
-
-        linesGroup.selectAll("*").remove();
-        if (animInterval) clearInterval(animInterval);
-
-        let currentYear = 2008;
-
-        const dataByTicker = d3.groups(data.filter(d => selected.includes(d.ticker)), d => d.ticker);
-
-        const line = d3.line()
-          .x(d => x(d.year))
-          .y(d => y(d.close));
-
-        animInterval = setInterval(() => {
-          if (currentYear > 2023) {
-            clearInterval(animInterval);
-            return;
-          }
-
-          linesGroup.selectAll("path").remove();
-
-          dataByTicker.forEach(([ticker, values]) => {
-            const filtered = values.filter(d => d.year <= currentYear).sort((a, b) => a.year - b.year);
-            linesGroup.append("path")
-              .datum(filtered)
-              .attr("fill", "none")
-              .attr("stroke", colors(ticker))
-              .attr("stroke-width", 2)
-              .attr("d", line);
-
-            // last point tooltip
-            const last = filtered[filtered.length - 1];
-            if (last) {
-              linesGroup.append("circle")
-                .attr("cx", x(last.year))
-                .attr("cy", y(last.close))
-                .attr("r", 4)
-                .attr("fill", colors(ticker))
-                .on("mouseover", (event) => {
-                  tooltip.transition().duration(200).style("opacity", 0.9);
-                  tooltip.html(`${ticker} (${last.year})<br>${last.close.toFixed(2)}`)
-                    .style("left", (event.pageX + 10) + "px")
-                    .style("top", (event.pageY - 28) + "px");
-                })
-                .on("mouseout", () => tooltip.transition().duration(300).style("opacity", 0));
-            }
-          });
-
-          currentYear++;
-        }, 600);
-      };
-
-      document.getElementById("reset").onclick = () => {
-        linesGroup.selectAll("*").remove();
-        if (animInterval) clearInterval(animInterval);
-        tooltip.style("opacity", 0);
-      };
-    }
-  </script>
-
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="layout.js"></script>
 </body>
 </html>

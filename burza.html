@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Burza - Stock Index Animation</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <style>
+    body {
+      font-family: sans-serif;
+      background: #f8f9fa;
+    }
+
+    #chart {
+      background: white;
+      border: 1px solid #dee2e6;
+      border-radius: 8px;
+      padding: 10px;
+      margin-top: 20px;
+    }
+
+    .tooltip {
+      position: absolute;
+      background: #343a40;
+      color: #fff;
+      padding: 5px 10px;
+      border-radius: 4px;
+      pointer-events: none;
+      font-size: 13px;
+      opacity: 0;
+      transition: opacity 0.2s;
+    }
+
+    select {
+      width: 100%;
+      height: 200px;
+    }
+
+    .sidebar {
+      background: #fff;
+      padding: 20px;
+      border: 1px solid #dee2e6;
+      border-radius: 8px;
+      margin-top: 20px;
+    }
+
+    h2 {
+      margin-top: 20px;
+      margin-bottom: 30px;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="container-fluid">
+    <h2 class="text-center">Stock Index Animation (2008–2023)</h2>
+    <div class="row">
+      <div class="col-md-9">
+        <div id="chart"></div>
+      </div>
+      <div class="col-md-3">
+        <div class="sidebar">
+          <label for="tickerSelect" class="form-label">Odaberi burzovne indekse:</label>
+          <select id="tickerSelect" class="form-select" multiple>
+            <option value="^GSPC">S&P 500 (^GSPC)</option>
+            <option value="^IXIC">NASDAQ (^IXIC)</option>
+            <option value="^DJI">Dow Jones (^DJI)</option>
+            <option value="^FTSE">FTSE (^FTSE)</option>
+            <option value="^N225">Nikkei (^N225)</option>
+            <option value="000001.SS">SSE (000001.SS)</option>
+            <option value="^NSEI">NSEI (^NSEI)</option>
+            <option value="^BSESN">BSE Sensex (^BSESN)</option>
+            <option value="^NYA">NYSE (^NYA)</option>
+            <option value="^N100">Euronext 100 (^N100)</option>
+          </select>
+          <button id="play" class="btn btn-primary mt-3 w-100">Pokreni</button>
+          <button id="reset" class="btn btn-secondary mt-2 w-100">Resetiraj</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="tooltip" id="tooltip"></div>
+
+  <script>
+    const allTickers = ['^GSPC', '^IXIC', '^DJI', '^FTSE', '^N225', '000001.SS', '^NSEI', '^BSESN', '^NYA', '^N100'];
+    const years = d3.range(2008, 2024);
+    const colors = d3.scaleOrdinal().domain(allTickers).range(d3.schemeTableau10);
+
+    const svgWidth = 900, svgHeight = 500;
+    const margin = { top: 40, right: 20, bottom: 50, left: 60 };
+    const width = svgWidth - margin.left - margin.right;
+    const height = svgHeight - margin.top - margin.bottom;
+
+    const svg = d3.select("#chart")
+      .append("svg")
+      .attr("width", svgWidth)
+      .attr("height", svgHeight)
+      .append("g")
+      .attr("transform", `translate(${margin.left},${margin.top})`);
+
+    const tooltip = d3.select("#tooltip");
+
+    let fullData = [];
+    let animInterval;
+
+    Promise.all(years.map(y => d3.csv(`data_${y}.csv`))).then(files => {
+      files.forEach((data, i) => {
+        const year = years[i];
+        data.forEach(d => {
+          d.Close = +d.Close;
+          d.Year = year;
+        });
+        fullData.push(...data.filter(d => allTickers.includes(d.Ticker)));
+      });
+
+      const grouped = d3.groups(fullData, d => d.Ticker, d => d.Year);
+      const processed = [];
+      grouped.forEach(([ticker, yearGroup]) => {
+        yearGroup.forEach(([year, records]) => {
+          const avg = d3.mean(records, d => d.Close);
+          processed.push({ ticker, year: +year, close: avg });
+        });
+      });
+
+      init(processed);
+    });
+
+    function init(data) {
+      const x = d3.scaleLinear().domain([2008, 2023]).range([0, width]);
+      const y = d3.scaleLinear().domain([0, d3.max(data, d => d.close) * 1.1]).range([height, 0]);
+
+      svg.append("g").attr("transform", `translate(0,${height})`).call(d3.axisBottom(x).tickFormat(d3.format("d")));
+      svg.append("g").call(d3.axisLeft(y));
+
+      svg.append("text")
+        .attr("x", width / 2)
+        .attr("y", height + 40)
+        .attr("text-anchor", "middle")
+        .text("Godina");
+
+      svg.append("text")
+        .attr("transform", "rotate(-90)")
+        .attr("x", -height / 2)
+        .attr("y", -45)
+        .attr("text-anchor", "middle")
+        .text("Prosječna zatvaranja");
+
+      const linesGroup = svg.append("g").attr("class", "lines");
+
+      document.getElementById("play").onclick = () => {
+        const selected = Array.from(document.getElementById("tickerSelect").selectedOptions).map(o => o.value);
+        if (!selected.length) return alert("Odaberi barem jedan indeks.");
+
+        linesGroup.selectAll("*").remove();
+        if (animInterval) clearInterval(animInterval);
+
+        let currentYear = 2008;
+
+        const dataByTicker = d3.groups(data.filter(d => selected.includes(d.ticker)), d => d.ticker);
+        const line = d3.line().x(d => x(d.year)).y(d => y(d.close));
+
+        animInterval = setInterval(() => {
+          if (currentYear > 2023) {
+            clearInterval(animInterval);
+            return;
+          }
+
+          const yearData = data.filter(d => d.year <= currentYear && selected.includes(d.ticker));
+          const grouped = d3.groups(yearData, d => d.ticker);
+
+          // LINIJE
+          const paths = linesGroup.selectAll("path").data(grouped, d => d[0]);
+
+          paths.join(
+            enter => enter.append("path")
+              .attr("fill", "none")
+              .attr("stroke", d => colors(d[0]))
+              .attr("stroke-width", 2)
+              .attr("d", d => line(d[1]))
+              .attr("stroke-dasharray", function () {
+                const len = this.getTotalLength();
+                return len + " " + len;
+              })
+              .attr("stroke-dashoffset", function () {
+                return this.getTotalLength();
+              })
+              .transition().duration(500)
+              .attr("stroke-dashoffset", 0),
+
+            update => update.transition().duration(500)
+              .attr("d", d => line(d[1]))
+          );
+
+          // KRUGOVI
+          const circles = linesGroup.selectAll("circle").data(
+            grouped.map(([ticker, values]) => {
+              const last = values[values.length - 1];
+              return { ...last, ticker };
+            }),
+            d => d.ticker
+          );
+
+          circles.join(
+            enter => enter.append("circle")
+              .attr("r", 0)
+              .attr("fill", d => colors(d.ticker))
+              .attr("cx", d => x(d.year))
+              .attr("cy", d => y(d.close))
+              .on("mouseover", (event, d) => {
+                tooltip.transition().duration(200).style("opacity", 0.9);
+                tooltip.html(`${d.ticker} (${d.year})<br>${d.close.toFixed(2)}`)
+                  .style("left", (event.pageX + 10) + "px")
+                  .style("top", (event.pageY - 28) + "px");
+              })
+              .on("mouseout", () => tooltip.transition().duration(300).style("opacity", 0))
+              .transition().duration(500)
+              .attr("r", 4),
+
+            update => update.transition().duration(500)
+              .attr("cx", d => x(d.year))
+              .attr("cy", d => y(d.close))
+          );
+
+          currentYear++;
+        }, 600);
+      };
+
+      document.getElementById("reset").onclick = () => {
+        linesGroup.selectAll("*").remove();
+        if (animInterval) clearInterval(animInterval);
+        tooltip.style("opacity", 0);
+      };
+    }
+  </script>
+</body>
+</html>
