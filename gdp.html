@@ -2,10 +2,11 @@
 <html lang="hr">
 <head>
   <meta charset="UTF-8" />
-  <title>BDP Rast po Regijama | Vizualizacija</title>
+  <title>BDP Rast po Državama | Vizualizacija</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <script src="https://d3js.org/d3.v7.min.js"></script>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet" />
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css" rel="stylesheet" />
   <style>
     body {
       background: #f8f9fa;
@@ -33,34 +34,47 @@
       max-height: 200px;
       overflow-y: auto;
     }
+    .error-message {
+      color: red;
+      font-weight: bold;
+      margin-top: 10px;
+    }
+    .radio-group {
+      margin-bottom: 15px;
+    }
   </style>
 </head>
 <body>
+  <!-- Header -->
+  <div id="header"></div>
+
   <div class="container mt-4">
     <div class="row">
       <div class="col-md-9">
-        <h3>Prosječni rast BDP-a po regijama (1987–2023)</h3>
+        <h3>Rast BDP-a po državama (1987–2023)</h3>
         <div id="chart" class="chart-container bg-white shadow rounded p-3"></div>
+        <div id="error" class="error-message"></div>
       </div>
       <div class="col-md-3">
         <h5>O projektu</h5>
-        <p>Prikaz prosječnog godišnjeg rasta BDP-a po regijama, s filtriranjem po razini dohotka i godini, koristeći World Bank podatke.</p>
-        <p>Izvori: <code>Metadata_Country_API_NY.GDP.MKTP.KD.ZG_DS2_en_csv_v2_85160.csv</code>, <code>API_NY.GDP.MKTP.KD.ZG_DS2_en_csv_v2_85160.csv</code></p>
+        <p>Prikaz godišnjeg rasta BDP-a po državama, s mogućnošću usporedbe više država u jednoj godini ili trenda jedne države kroz godine, koristeći World Bank podatke.</p>
+        <p>Izvori: <code>Metadata_Country_API_NY.GDP.MKTP.KD.ZG_DS2_en_csv_v2_85160.csv</code>, <code>drzave.csv</code></p>
         <div class="filter-container">
           <h6>Filteri</h6>
+          <div class="radio-group">
+            <label class="form-label">Način prikaza:</label><br>
+            <input type="radio" name="display-mode" id="mode-compare" value="compare" checked>
+            <label for="mode-compare">Usporedba država</label><br>
+            <input type="radio" name="display-mode" id="mode-trend" value="trend">
+            <label for="mode-trend">Trend jedne države</label>
+          </div>
           <div>
-            <label for="region-select" class="form-label">Odaberi regiju:</label>
-            <select id="region-select" class="form-select mb-3" multiple>
+            <label for="country-select" class="form-label">Odaberi državu(e):</label>
+            <select id="country-select" class="form-select mb-3" multiple>
               <!-- Popunit će se dinamički -->
             </select>
           </div>
-          <div>
-            <label for="income-select" class="form-label">Odaberi razinu dohotka:</label>
-            <select id="income-select" class="form-select mb-3" multiple>
-              <!-- Popunit će se dinamički -->
-            </select>
-          </div>
-          <div>
+          <div id="year-filter">
             <label for="year-select" class="form-label">Odaberi godinu:</label>
             <select id="year-select" class="form-select mb-3">
               <!-- Popunit će se dinamički -->
@@ -72,8 +86,10 @@
   </div>
   <div class="tooltip" id="tooltip" style="opacity: 0;"></div>
 
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="layout.js"></script>
   <script>
-    const margin = { top: 20, right: 30, bottom: 70, left: 60 };
+    const margin = { top: 20, right: 30, bottom: 150, left: 60 };
     const width = 800 - margin.left - margin.right;
     const height = 400 - margin.top - margin.bottom;
 
@@ -85,6 +101,7 @@
       .attr("transform", `translate(${margin.left},${margin.top})`);
 
     const tooltip = d3.select("#tooltip");
+    const errorDiv = d3.select("#error");
     let metadata = [];
     let gdpData = [];
     const startYear = 1987;
@@ -92,13 +109,9 @@
 
     // Funkcija za čišćenje podataka
     function cleanData(data, isMetadata) {
-      return data.filter(d => {
-        if (!d["Country Code"]) return false;
-        if (isMetadata) {
-          return d["Region"] && d["IncomeGroup"];
-        }
-        return true;
-      }).map(d => {
+      const filteredData = data.filter(d => d["Country Code"] && d["Country Code"] !== "");
+      console.log(`Cleaned ${isMetadata ? 'metadata' : 'gdp'} rows:`, filteredData.length);
+      return filteredData.map(d => {
         const cleaned = { ...d };
         if (!isMetadata) {
           for (let year = startYear; year <= endYear; year++) {
@@ -114,62 +127,40 @@
       return [...new Set(data.map(d => d[key]).filter(d => d))].sort();
     }
 
-    // Funkcija za crtanje grafikona
-    function drawChart(selectedRegions, selectedIncomes, selectedYear) {
+    // Funkcija za crtanje stupčastog grafikona (usporedba država)
+    function drawBarChart(selectedCountries, selectedYear) {
       svg.selectAll("*").remove();
+      errorDiv.text("");
 
-      // Filtriraj zemlje prema metapodacima
-      const validCountryCodes = metadata.map(d => d["Country Code"]);
-      const filteredGdpData = gdpData.filter(d => validCountryCodes.includes(d["Country Code"]));
+      const filteredData = gdpData.filter(d => selectedCountries.includes(d["Country Name"]) && d[selectedYear] !== null);
 
-      // Filtriraj prema odabranim regijama i razinama dohotka
-      const filteredData = filteredGdpData.filter(d => {
-        const meta = metadata.find(m => m["Country Code"] === d["Country Code"]);
-        if (!meta) return false;
-        const regionMatch = !selectedRegions.length || selectedRegions.includes(meta["Region"]);
-        const incomeMatch = !selectedIncomes.length || selectedIncomes.includes(meta["IncomeGroup"]);
-        return regionMatch && incomeMatch && d[selectedYear] !== null;
-      });
+      const data = filteredData.map(d => ({
+        country: d["Country Name"],
+        growth: d[selectedYear]
+      }));
 
-      // Grupiraj po regijama i izračunaj prosjek
-      const regionAverages = d3.rollup(
-        filteredData,
-        v => ({
-          avgGrowth: d3.mean(v, d => d[selectedYear]),
-          countries: v.length,
-          incomeGroups: [...new Set(metadata.filter(m => v.some(d => d["Country Code"] === m["Country Code"])).map(m => m["IncomeGroup"]))]
-        }),
-        d => metadata.find(m => m["Country Code"] === d["Country Code"])?.["Region"]
-      );
-
-      const data = Array.from(regionAverages, ([region, { avgGrowth, countries, incomeGroups }]) => ({
-        region,
-        avgGrowth,
-        countries,
-        incomeGroups
-      })).filter(d => d.avgGrowth !== undefined);
+      console.log("Bar chart data:", data);
 
       if (!data.length) {
         svg.append("text")
           .attr("x", width / 2)
           .attr("y", height / 2)
           .attr("text-anchor", "middle")
-          .text("Nema podataka za odabrane filtere.");
+          .text(`Nema podataka za odabrane države u godini ${selectedYear}.`);
+        errorDiv.text("Pokušajte odabrati druge države ili godinu.");
         return;
       }
 
-      // Postavi skale
       const x = d3.scaleBand()
-        .domain(data.map(d => d.region))
+        .domain(data.map(d => d.country))
         .range([0, width])
         .padding(0.1);
 
       const y = d3.scaleLinear()
-        .domain([d3.min(data, d => d.avgGrowth) - 1, d3.max(data, d => d.avgGrowth) + 1])
+        .domain([d3.min(data, d => d.growth) - 1, d3.max(data, d => d.growth) + 1])
         .nice()
         .range([height, 0]);
 
-      // Postavi osi
       svg.append("g")
         .attr("transform", `translate(0,${height})`)
         .call(d3.axisBottom(x))
@@ -180,40 +171,135 @@
       svg.append("g")
         .call(d3.axisLeft(y).ticks(10, ".1f"));
 
-      // Oznake osi
       svg.append("text")
         .attr("x", width / 2)
         .attr("y", height + margin.bottom - 10)
         .attr("text-anchor", "middle")
-        .text("Regija");
+        .text("Država");
 
       svg.append("text")
         .attr("transform", "rotate(-90)")
         .attr("x", -height / 2)
         .attr("y", -margin.left + 20)
         .attr("text-anchor", "middle")
-        .text("Prosječni rast BDP-a (%)");
+        .text("Rast BDP-a (%)");
 
-      // Crtaj stupce
       svg.selectAll(".bar")
         .data(data)
         .enter()
         .append("rect")
         .attr("class", "bar")
-        .attr("x", d => x(d.region))
-        .attr("y", d => y(Math.max(0, d.avgGrowth)))
+        .attr("x", d => x(d.country))
+        .attr("y", d => y(Math.max(0, d.growth)))
         .attr("width", x.bandwidth())
-        .attr("height", d => Math.abs(y(d.avgGrowth) - y(0)))
+        .attr("height", d => Math.abs(y(d.growth) - y(0)))
         .attr("fill", "steelblue")
         .on("mouseover", function(event, d) {
           d3.select(this).attr("fill", "orange");
           tooltip.transition().duration(200).style("opacity", 0.9);
           tooltip.html(
-            `Regija: ${d.region}<br>` +
+            `Država: ${d.country}<br>` +
             `Godina: ${selectedYear}<br>` +
-            `Prosječni rast: ${d.avgGrowth.toFixed(2)}%<br>` +
-            `Broj zemalja: ${d.countries}<br>` +
-            `Razine dohotka: ${d.incomeGroups.join(", ")}`
+            `Rast BDP-a: ${d.growth.toFixed(2)}%`
+          )
+            .style("left", (event.pageX + 10) + "px")
+            .style("top", (event.pageY - 28) + "px");
+        })
+        .on("mouseout", function() {
+          d3.select(this).attr("fill", "steelblue");
+          tooltip.transition().duration(500).style("opacity", 0);
+        });
+    }
+
+    // Funkcija za crtanje linijskog grafikona (trend jedne države)
+    function drawLineChart(selectedCountry) {
+      svg.selectAll("*").remove();
+      errorDiv.text("");
+
+      const countryData = gdpData.find(d => d["Country Name"] === selectedCountry);
+      if (!countryData) {
+        svg.append("text")
+          .attr("x", width / 2)
+          .attr("y", height / 2)
+          .attr("text-anchor", "middle")
+          .text("Nema podataka za odabranu državu.");
+        errorDiv.text("Odaberite drugu državu.");
+        return;
+      }
+
+      const data = d3.range(startYear, endYear + 1).map(year => ({
+        year: year,
+        growth: countryData[year] !== null ? countryData[year] : null
+      })).filter(d => d.growth !== null);
+
+      console.log("Line chart data:", data);
+
+      if (!data.length) {
+        svg.append("text")
+          .attr("x", width / 2)
+          .attr("y", height / 2)
+          .attr("text-anchor", "middle")
+          .text("Nema podataka za odabranu državu u rasponu godina.");
+        errorDiv.text("Odaberite drugu državu.");
+        return;
+      }
+
+      const x = d3.scaleLinear()
+        .domain([startYear, endYear])
+        .range([0, width]);
+
+      const y = d3.scaleLinear()
+        .domain([d3.min(data, d => d.growth) - 1, d3.max(data, d => d.growth) + 1])
+        .nice()
+        .range([height, 0]);
+
+      svg.append("g")
+        .attr("transform", `translate(0,${height})`)
+        .call(d3.axisBottom(x).tickFormat(d3.format("d")));
+
+      svg.append("g")
+        .call(d3.axisLeft(y).ticks(10, ".1f"));
+
+      svg.append("text")
+        .attr("x", width / 2)
+        .attr("y", height + margin.bottom - 10)
+        .attr("text-anchor", "middle")
+        .text("Godina");
+
+      svg.append("text")
+        .attr("transform", "rotate(-90)")
+        .attr("x", -height / 2)
+        .attr("y", -margin.left + 20)
+        .attr("text-anchor", "middle")
+        .text("Rast BDP-a (%)");
+
+      const line = d3.line()
+        .x(d => x(d.year))
+        .y(d => y(d.growth))
+        .defined(d => d.growth !== null);
+
+      svg.append("path")
+        .datum(data)
+        .attr("fill", "none")
+        .attr("stroke", "steelblue")
+        .attr("stroke-width", 2)
+        .attr("d", line);
+
+      svg.selectAll(".dot")
+        .data(data)
+        .enter()
+        .append("circle")
+        .attr("class", "dot")
+        .attr("cx", d => x(d.year))
+        .attr("cy", d => y(d.growth))
+        .attr("r", 4)
+        .attr("fill", "steelblue")
+        .on("mouseover", function(event, d) {
+          d3.select(this).attr("fill", "orange");
+          tooltip.transition().duration(200).style("opacity", 0.9);
+          tooltip.html(
+            `Godina: ${d.year}<br>` +
+            `Rast BDP-a: ${d.growth.toFixed(2)}%`
           )
             .style("left", (event.pageX + 10) + "px")
             .style("top", (event.pageY - 28) + "px");
@@ -227,29 +313,29 @@
     // Učitavanje podataka i postavljanje filtera
     Promise.all([
       d3.csv("Metadata_Country_API_NY.GDP.MKTP.KD.ZG_DS2_en_csv_v2_85160.csv"),
-      d3.csv("API_NY.GDP.MKTP.KD.ZG_DS2_en_csv_v2_85160.csv")
+      d3.csv("drzave.csv")
     ]).then(([metaRaw, gdpRaw]) => {
       // Čišćenje podataka
       metadata = cleanData(metaRaw, true);
       gdpData = cleanData(gdpRaw, false);
 
-      // Dohvati jedinstvene regije i razine dohotka
-      const regions = getUniqueValues(metadata, "Region");
-      const incomeGroups = getUniqueValues(metadata, "IncomeGroup");
+      console.log("Metadata rows:", metadata.length);
+      console.log("GDP data rows:", gdpData.length);
+      console.log("Sample GDP data:", gdpRaw.slice(0, 2));
+
+      if (!metaRaw.length || !gdpRaw.length) {
+        errorDiv.text("Greška: Nema podataka u jednom ili oba CSV-a. Provjerite datoteke.");
+        return;
+      }
+
+      // Dohvati jedinstvene države i godine
+      const countries = getUniqueValues(gdpData, "Country Name");
       const years = d3.range(startYear, endYear + 1);
 
       // Popuni filtere
-      const regionSelect = d3.select("#region-select");
-      regionSelect.selectAll("option")
-        .data(regions)
-        .enter()
-        .append("option")
-        .attr("value", d => d)
-        .text(d => d);
-
-      const incomeSelect = d3.select("#income-select");
-      incomeSelect.selectAll("option")
-        .data(incomeGroups)
+      const countrySelect = d3.select("#country-select");
+      countrySelect.selectAll("option")
+        .data(countries)
         .enter()
         .append("option")
         .attr("value", d => d)
@@ -260,27 +346,51 @@
         .data(years)
         .enter()
         .append("option")
-        .attr("value", year)
-        .text(year => year);
+        .attr("value", d => d)
+        .text(d => d);
 
-      // Postavi zadatugodinu
+      // Postavi zadanu godinu
       yearSelect.property("value", endYear);
 
       // Oslušivači za filtere
       function updateChart() {
-        const selectedRegions = regionSelect.property("value");
-        const selectedIncomes = incomeSelect.property("value");
+        const displayMode = d3.select("input[name='display-mode']:checked").property("value");
+        const selectedCountries = Array.from(countrySelect.selectAll("option:checked").nodes()).map(d => d.value);
         const selectedYear = +yearSelect.property("value");
-        drawChart(selectedRegions, selectedIncomes, selectedYear);
+
+        console.log("Selected filters:", { displayMode, selectedCountries, selectedYear });
+
+        if (displayMode === "trend") {
+          if (selectedCountries.length !== 1) {
+            errorDiv.text("Odaberite točno jednu državu za prikaz trenda.");
+            svg.selectAll("*").remove();
+            return;
+          }
+          d3.select("#country-select").attr("multiple", null);
+          d3.select("#year-filter").style("display", "none");
+          drawLineChart(selectedCountries[0]);
+        } else {
+          d3.select("#country-select").attr("multiple", "multiple");
+          d3.select("#year-filter").style("display", "block");
+          if (selectedCountries.length === 0) {
+            errorDiv.text("Odaberite barem jednu državu za usporedbu.");
+            svg.selectAll("*").remove();
+            return;
+          }
+          drawBarChart(selectedCountries, selectedYear);
+        }
       }
 
-      regionSelect.on("change", updateChart);
-      incomeSelect.on("change", updateChart);
+      countrySelect.on("change", updateChart);
       yearSelect.on("change", updateChart);
+      d3.selectAll("input[name='display-mode']").on("change", updateChart);
 
       // Inicijalno crtanje
-      drawChart([], [], endYear);
-    }).catch(error => console.error("Error loading CSV files:", error));
+      updateChart();
+    }).catch(error => {
+      console.error("Error loading CSV files:", error);
+      errorDiv.text("Greška pri učitavanju CSV datoteka. Provjerite jesu li datoteke dostupne i ispravne.");
+    });
   </script>
 </body>
 </html>
