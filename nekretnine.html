@@ -62,34 +62,25 @@
         <div class="filter-container">
           <h6>Filteri</h6>
           <div>
-            <label for="period-select" class="form-label">Odaberi period:</label>
-            <select id="period-select" class="form-select mb-3">
-              <option value="all">Svi podaci (1987–danas)</option>
-              <option value="2000-2007">Prije krize (2000–2007)</option>
-              <option value="2007-2012">Financijska kriza (2007–2012)</option>
-              <option value="2020-2025">Post-COVID (2020–danas)</option>
-            </select>
-          </div>
-          <div>
             <label class="form-label">Raspon godina:</label>
             <div id="year-slider"></div>
-            <div id="year-range" class="mb-3"></div>
+            <div id="year-range" class="error-message"></div>
           </div>
           <div>
             <label class="form-label">Raspon Case-Shiller indeksa:</label>
             <div class="d-flex mb-3">
-              <input type="number" id="min-housing" class="form-control filter-input" placeholder="Min" step="0.1">
-              <input type="number" id="max-housing" class="form-control filter-input" placeholder="Max" step="0.1">
+              <input type="number" id="minHousing-slide" class="form-control filter-input" placeholder="Min" step="0.1">
+              <input type="number" id="maxHousing-slide" class="form-control filter-input" placeholder="Max" step="0.1">
             </div>
           </div>
           <div>
-            <label class="form-label">Raspon CPI:</label>
+            <label class="form-label">Raspon CPI-a:</label>
             <div class="d-flex mb-3">
-              <input type="number" id="min-inflation" class="form-control filter-input" placeholder="Min" step="0.1">
-              <input type="number" id="max-inflation" class="form-control filter-input" placeholder="Max" step="0.1">
+              <input type="number" id="minInflation-slide" class="form-control filter-input" placeholder="Min" step="0.1">
+              <input type="number" id="maxInflation-slide" class="form-control filter-input" placeholder="Max" step="0.0">
             </div>
           </div>
-          <button id="apply-value-filter" class="btn btn-primary btn-sm">Primijeni</button>
+          <button id="apply-value-filter" class="btn btn-primary">Primijeni</button>
         </div>
       </div>
     </div>
@@ -320,16 +311,16 @@
       });
 
       // Filter za raspon Case-Shiller
-      const minHousingInput = document.getElementById("min-housing").value;
-      const maxHousingInput = document.getElementById("max-housing").value;
+      const minHousingInput = document.getElementById("minHousing-slide").value;
+      const maxHousingInput = document.getElementById("maxHousing-slide").value;
       const minHousing = minHousingInput ? +minHousingInput : -Infinity;
       const maxHousing = maxHousingInput ? +maxHousingInput : Infinity;
       console.log("Raspon Case-Shiller:", { minHousing, maxHousing });
       filteredHousing = filteredHousing.filter(d => d.value >= minHousing && d.value <= maxHousing);
 
       // Filter za raspon CPI
-      const minInflationInput = document.getElementById("min-inflation").value;
-      const maxInflationInput = document.getElementById("max-inflation").value;
+      const minInflationInput = document.getElementById("minInflation-slide").value;
+      const maxInflationInput = document.getElementById("maxInflation-slide").value;
       const minInflation = minInflationInput ? +minInflationInput : -Infinity;
       const maxInflation = maxInflationInput ? +maxInflationInput : Infinity;
       console.log("Raspon CPI:", { minInflation, maxInflation });
@@ -420,21 +411,6 @@
 
       slider.noUiSlider.on("change", filterData);
 
-      // Inicijaliziraj padajući izbornik za periode
-      const periodSelect = document.getElementById("period-select");
-      periodSelect.addEventListener("change", () => {
-        const value = periodSelect.value;
-        let startYear, endYear;
-        if (value === "all") {
-          startYear = minYear;
-          endYear = maxYear;
-        } else {
-          [startYear, endYear] = value.split("-").map(Number);
-        }
-        slider.noUiSlider.set([startYear, endYear]);
-        filterData();
-      });
-
       // Inicijaliziraj filter za vrijednosti
       const applyButton = document.getElementById("apply-value-filter");
       applyButton.addEventListener("click", () => {
@@ -442,8 +418,8 @@
         filterData();
       });
     }).catch(error => {
-      console.error("Greška pri učitavanju CSV-ova:", error);
-      alert("Ne mogu učitati CSV-ove. Provjeri jesu li datoteke u direktoriju.");
+      console.error("Error loading CSV files:", error);
+      alert("Greška pri učitavanju CSV-ova. Provjeri jesu li datoteke u direktoriju.");
     });
   </script>
 </body>

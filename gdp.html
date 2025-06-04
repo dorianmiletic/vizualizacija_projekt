@@ -25,7 +25,7 @@
       font-size: 14px;
     }
     svg {
-      overflow: visible;
+      overflow: hidden;
     }
     .filter-container {
       margin-top: 20px;
@@ -39,13 +39,27 @@
       font-weight: bold;
       margin-top: 10px;
     }
-    .radio-group {
-      margin-bottom: 15px;
+    .search-bar {
+      margin-bottom: 10px;
+    }
+    .legend {
+      font-size: 12px;
+      margin-top: 10px;
+    }
+    .legend-item {
+      display: inline-block;
+      margin-right: 15px;
+    }
+    .legend-color {
+      display: inline-block;
+      width: 12px;
+      height: 12px;
+      margin-right: 5px;
+      vertical-align: middle;
     }
   </style>
 </head>
 <body>
-  <!-- Header -->
   <div id="header"></div>
 
   <div class="container mt-4">
@@ -53,30 +67,20 @@
       <div class="col-md-9">
         <h3>Rast BDP-a po državama (1987–2023)</h3>
         <div id="chart" class="chart-container bg-white shadow rounded p-3"></div>
+        <div id="legend" class="legend"></div>
         <div id="error" class="error-message"></div>
       </div>
       <div class="col-md-3">
         <h5>O projektu</h5>
-        <p>Prikaz godišnjeg rasta BDP-a po državama, s mogućnošću usporedbe više država u jednoj godini ili trenda jedne države kroz godine, koristeći World Bank podatke.</p>
+        <p>Prikaz godišnjeg rasta BDP-a po državama, s mogućnošću prikaza trenda više država kroz godine, koristeći World Bank podatke.</p>
         <p>Izvori: <code>Metadata_Country_API_NY.GDP.MKTP.KD.ZG_DS2_en_csv_v2_85160.csv</code>, <code>drzave.csv</code></p>
         <div class="filter-container">
           <h6>Filteri</h6>
-          <div class="radio-group">
-            <label class="form-label">Način prikaza:</label><br>
-            <input type="radio" name="display-mode" id="mode-compare" value="compare" checked>
-            <label for="mode-compare">Usporedba država</label><br>
-            <input type="radio" name="display-mode" id="mode-trend" value="trend">
-            <label for="mode-trend">Trend jedne države</label>
-          </div>
           <div>
-            <label for="country-select" class="form-label">Odaberi državu(e):</label>
+            <label for="search-bar" class="form-label">Pretraži državu:</label>
+            <input type="text" id="search-bar" class="form-control search-bar" placeholder="Upiši naziv države...">
+            <label for="country-select" class="form-label mt-2">Odaberi državu(e):</label>
             <select id="country-select" class="form-select mb-3" multiple>
-              <!-- Popunit će se dinamički -->
-            </select>
-          </div>
-          <div id="year-filter">
-            <label for="year-select" class="form-label">Odaberi godinu:</label>
-            <select id="year-select" class="form-select mb-3">
               <!-- Popunit će se dinamički -->
             </select>
           </div>
@@ -89,7 +93,7 @@
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
   <script src="layout.js"></script>
   <script>
-    const margin = { top: 20, right: 30, bottom: 150, left: 60 };
+    const margin = { top: 20, right: 30, bottom: 50, left: 60 };
     const width = 800 - margin.left - margin.right;
     const height = 400 - margin.top - margin.bottom;
 
@@ -102,15 +106,16 @@
 
     const tooltip = d3.select("#tooltip");
     const errorDiv = d3.select("#error");
+    const legendDiv = d3.select("#legend");
     let metadata = [];
     let gdpData = [];
     const startYear = 1987;
     const endYear = 2023;
+    const colors = d3.scaleOrdinal().range(d3.schemeTableau10);
 
     // Funkcija za čišćenje podataka
     function cleanData(data, isMetadata) {
       const filteredData = data.filter(d => d["Country Code"] && d["Country Code"] !== "");
-      console.log(`Cleaned ${isMetadata ? 'metadata' : 'gdp'} rows:`, filteredData.length);
       return filteredData.map(d => {
         const cleaned = { ...d };
         if (!isMetadata) {
@@ -127,134 +132,71 @@
       return [...new Set(data.map(d => d[key]).filter(d => d))].sort();
     }
 
-    // Funkcija za crtanje stupčastog grafikona (usporedba država)
-    function drawBarChart(selectedCountries, selectedYear) {
+    // Funkcija za crtanje linijskog grafikona za više država
+    function drawLineChart(selectedCountries) {
       svg.selectAll("*").remove();
       errorDiv.text("");
+      legendDiv.selectAll("*").remove();
 
-      const filteredData = gdpData.filter(d => selectedCountries.includes(d["Country Name"]) && d[selectedYear] !== null);
+      if (!selectedCountries.length) {
+        svg.append("text")
+          .attr("x", width / 2)
+          .attr("y", height / 2)
+          .attr("text-anchor", "middle")
+          .text("Odaberite barem jednu državu.");
+        errorDiv.text("Odaberite državu(e) za prikaz trenda.");
+        return;
+      }
 
-      const data = filteredData.map(d => ({
-        country: d["Country Name"],
-        growth: d[selectedYear]
+      const countryData = gdpData.filter(d => selectedCountries.includes(d["Country Name"]));
+      if (!countryData.length) {
+        svg.append("text")
+          .attr("x", width / 2)
+          .attr("y", height / 2)
+          .attr("text-anchor", "middle")
+          .text("Nema podataka za odabrane države.");
+        errorDiv.text("Odaberite druge države.");
+        return;
+      }
+
+      // Priprema podataka za svaku državu
+      const dataByCountry = countryData.map(country => ({
+        country: country["Country Name"],
+        values: d3.range(startYear, endYear + 1).map(year => ({
+          year: year,
+          growth: country[year] !== null ? country[year] : null
+        })).filter(d => d.growth !== null)
       }));
 
-      console.log("Bar chart data:", data);
-
-      if (!data.length) {
+      // Provjera ima li podataka
+      const hasData = dataByCountry.some(d => d.values.length > 0);
+      if (!hasData) {
         svg.append("text")
           .attr("x", width / 2)
           .attr("y", height / 2)
           .attr("text-anchor", "middle")
-          .text(`Nema podataka za odabrane države u godini ${selectedYear}.`);
-        errorDiv.text("Pokušajte odabrati druge države ili godinu.");
+          .text("Nema podataka za odabrane države u rasponu godina.");
+        errorDiv.text("Odaberite druge države.");
         return;
       }
 
-      const x = d3.scaleBand()
-        .domain(data.map(d => d.country))
-        .range([0, width])
-        .padding(0.1);
-
-      const y = d3.scaleLinear()
-        .domain([d3.min(data, d => d.growth) - 1, d3.max(data, d => d.growth) + 1])
-        .nice()
-        .range([height, 0]);
-
-      svg.append("g")
-        .attr("transform", `translate(0,${height})`)
-        .call(d3.axisBottom(x))
-        .selectAll("text")
-        .attr("transform", "rotate(-45)")
-        .style("text-anchor", "end");
-
-      svg.append("g")
-        .call(d3.axisLeft(y).ticks(10, ".1f"));
-
-      svg.append("text")
-        .attr("x", width / 2)
-        .attr("y", height + margin.bottom - 10)
-        .attr("text-anchor", "middle")
-        .text("Država");
-
-      svg.append("text")
-        .attr("transform", "rotate(-90)")
-        .attr("x", -height / 2)
-        .attr("y", -margin.left + 20)
-        .attr("text-anchor", "middle")
-        .text("Rast BDP-a (%)");
-
-      svg.selectAll(".bar")
-        .data(data)
-        .enter()
-        .append("rect")
-        .attr("class", "bar")
-        .attr("x", d => x(d.country))
-        .attr("y", d => y(Math.max(0, d.growth)))
-        .attr("width", x.bandwidth())
-        .attr("height", d => Math.abs(y(d.growth) - y(0)))
-        .attr("fill", "steelblue")
-        .on("mouseover", function(event, d) {
-          d3.select(this).attr("fill", "orange");
-          tooltip.transition().duration(200).style("opacity", 0.9);
-          tooltip.html(
-            `Država: ${d.country}<br>` +
-            `Godina: ${selectedYear}<br>` +
-            `Rast BDP-a: ${d.growth.toFixed(2)}%`
-          )
-            .style("left", (event.pageX + 10) + "px")
-            .style("top", (event.pageY - 28) + "px");
-        })
-        .on("mouseout", function() {
-          d3.select(this).attr("fill", "steelblue");
-          tooltip.transition().duration(500).style("opacity", 0);
-        });
-    }
-
-    // Funkcija za crtanje linijskog grafikona (trend jedne države)
-    function drawLineChart(selectedCountry) {
-      svg.selectAll("*").remove();
-      errorDiv.text("");
-
-      const countryData = gdpData.find(d => d["Country Name"] === selectedCountry);
-      if (!countryData) {
-        svg.append("text")
-          .attr("x", width / 2)
-          .attr("y", height / 2)
-          .attr("text-anchor", "middle")
-          .text("Nema podataka za odabranu državu.");
-        errorDiv.text("Odaberite drugu državu.");
-        return;
-      }
-
-      const data = d3.range(startYear, endYear + 1).map(year => ({
-        year: year,
-        growth: countryData[year] !== null ? countryData[year] : null
-      })).filter(d => d.growth !== null);
-
-      console.log("Line chart data:", data);
-
-      if (!data.length) {
-        svg.append("text")
-          .attr("x", width / 2)
-          .attr("y", height / 2)
-          .attr("text-anchor", "middle")
-          .text("Nema podataka za odabranu državu u rasponu godina.");
-        errorDiv.text("Odaberite drugu državu.");
-        return;
-      }
-
+      // Skale
       const x = d3.scaleLinear()
         .domain([startYear, endYear])
         .range([0, width]);
 
+      const allGrowths = dataByCountry.flatMap(d => d.values.map(v => v.growth)).filter(g => g !== null);
       const y = d3.scaleLinear()
-        .domain([d3.min(data, d => d.growth) - 1, d3.max(data, d => d.growth) + 1])
+        .domain([
+          Math.min(0, d3.min(allGrowths) - 1), // Uključuje nulu i minimalnu vrijednost
+          Math.max(0, d3.max(allGrowths) + 1)  // Uključuje nulu i maksimalnu vrijednost
+        ])
         .nice()
         .range([height, 0]);
 
+      // Osi
       svg.append("g")
-        .attr("transform", `translate(0,${height})`)
+        .attr("transform", `translate(0,${y(0)})`) // X-os na y=0
         .call(d3.axisBottom(x).tickFormat(d3.format("d")));
 
       svg.append("g")
@@ -262,7 +204,7 @@
 
       svg.append("text")
         .attr("x", width / 2)
-        .attr("y", height + margin.bottom - 10)
+        .attr("y", y(0) + margin.bottom - 10)
         .attr("text-anchor", "middle")
         .text("Godina");
 
@@ -273,41 +215,61 @@
         .attr("text-anchor", "middle")
         .text("Rast BDP-a (%)");
 
+      // Linije i točke
       const line = d3.line()
         .x(d => x(d.year))
         .y(d => y(d.growth))
         .defined(d => d.growth !== null);
 
-      svg.append("path")
-        .datum(data)
-        .attr("fill", "none")
-        .attr("stroke", "steelblue")
-        .attr("stroke-width", 2)
-        .attr("d", line);
+      colors.domain(selectedCountries);
 
-      svg.selectAll(".dot")
-        .data(data)
+      const lines = svg.selectAll(".line")
+        .data(dataByCountry)
+        .enter()
+        .append("g")
+        .attr("class", "line");
+
+      lines.append("path")
+        .attr("fill", "none")
+        .attr("stroke", d => colors(d.country))
+        .attr("stroke-width", 2)
+        .attr("d", d => line(d.values));
+
+      lines.selectAll(".dot")
+        .data(d => d.values.map(v => ({ ...v, country: d.country })))
         .enter()
         .append("circle")
         .attr("class", "dot")
         .attr("cx", d => x(d.year))
         .attr("cy", d => y(d.growth))
         .attr("r", 4)
-        .attr("fill", "steelblue")
+        .attr("fill", d => colors(d.country))
         .on("mouseover", function(event, d) {
-          d3.select(this).attr("fill", "orange");
+          d3.select(this).attr("r", 6).attr("fill", "orange");
           tooltip.transition().duration(200).style("opacity", 0.9);
           tooltip.html(
+            `Država: ${d.country}<br>` +
             `Godina: ${d.year}<br>` +
             `Rast BDP-a: ${d.growth.toFixed(2)}%`
           )
             .style("left", (event.pageX + 10) + "px")
             .style("top", (event.pageY - 28) + "px");
         })
-        .on("mouseout", function() {
-          d3.select(this).attr("fill", "steelblue");
+        .on("mouseout", function(event, d) {
+          d3.select(this).attr("r", 4).attr("fill", colors(d.country));
           tooltip.transition().duration(500).style("opacity", 0);
         });
+
+      // Legenda
+      legendDiv.selectAll(".legend-item")
+        .data(selectedCountries)
+        .enter()
+        .append("div")
+        .attr("class", "legend-item")
+        .html(d => `
+          <span class="legend-color" style="background-color: ${colors(d)};"></span>
+          ${d}
+        `);
     }
 
     // Učitavanje podataka i postavljanje filtera
@@ -315,24 +277,17 @@
       d3.csv("Metadata_Country_API_NY.GDP.MKTP.KD.ZG_DS2_en_csv_v2_85160.csv"),
       d3.csv("drzave.csv")
     ]).then(([metaRaw, gdpRaw]) => {
-      // Čišćenje podataka
       metadata = cleanData(metaRaw, true);
       gdpData = cleanData(gdpRaw, false);
-
-      console.log("Metadata rows:", metadata.length);
-      console.log("GDP data rows:", gdpData.length);
-      console.log("Sample GDP data:", gdpRaw.slice(0, 2));
 
       if (!metaRaw.length || !gdpRaw.length) {
         errorDiv.text("Greška: Nema podataka u jednom ili oba CSV-a. Provjerite datoteke.");
         return;
       }
 
-      // Dohvati jedinstvene države i godine
       const countries = getUniqueValues(gdpData, "Country Name");
-      const years = d3.range(startYear, endYear + 1);
 
-      // Popuni filtere
+      // Popuni country select
       const countrySelect = d3.select("#country-select");
       countrySelect.selectAll("option")
         .data(countries)
@@ -341,52 +296,22 @@
         .attr("value", d => d)
         .text(d => d);
 
-      const yearSelect = d3.select("#year-select");
-      yearSelect.selectAll("option")
-        .data(years)
-        .enter()
-        .append("option")
-        .attr("value", d => d)
-        .text(d => d);
+      // Traka za pretraživanje
+      const searchBar = d3.select("#search-bar");
+      searchBar.on("input", function() {
+        const searchTerm = this.value.toLowerCase();
+        countrySelect.selectAll("option")
+          .style("display", d => d.toLowerCase().includes(searchTerm) ? null : "none");
+      });
 
-      // Postavi zadanu godinu
-      yearSelect.property("value", endYear);
-
-      // Oslušivači za filtere
-      function updateChart() {
-        const displayMode = d3.select("input[name='display-mode']:checked").property("value");
-        const selectedCountries = Array.from(countrySelect.selectAll("option:checked").nodes()).map(d => d.value);
-        const selectedYear = +yearSelect.property("value");
-
-        console.log("Selected filters:", { displayMode, selectedCountries, selectedYear });
-
-        if (displayMode === "trend") {
-          if (selectedCountries.length !== 1) {
-            errorDiv.text("Odaberite točno jednu državu za prikaz trenda.");
-            svg.selectAll("*").remove();
-            return;
-          }
-          d3.select("#country-select").attr("multiple", null);
-          d3.select("#year-filter").style("display", "none");
-          drawLineChart(selectedCountries[0]);
-        } else {
-          d3.select("#country-select").attr("multiple", "multiple");
-          d3.select("#year-filter").style("display", "block");
-          if (selectedCountries.length === 0) {
-            errorDiv.text("Odaberite barem jednu državu za usporedbu.");
-            svg.selectAll("*").remove();
-            return;
-          }
-          drawBarChart(selectedCountries, selectedYear);
-        }
-      }
-
-      countrySelect.on("change", updateChart);
-      yearSelect.on("change", updateChart);
-      d3.selectAll("input[name='display-mode']").on("change", updateChart);
+      // Oslušivač za promjenu odabira
+      countrySelect.on("change", function() {
+        const selectedCountries = Array.from(this.selectedOptions).map(o => o.value);
+        drawLineChart(selectedCountries);
+      });
 
       // Inicijalno crtanje
-      updateChart();
+      drawLineChart([]);
     }).catch(error => {
       console.error("Error loading CSV files:", error);
       errorDiv.text("Greška pri učitavanju CSV datoteka. Provjerite jesu li datoteke dostupne i ispravne.");

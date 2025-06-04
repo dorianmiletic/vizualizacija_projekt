@@ -1,6 +1,6 @@
 document.addEventListener('DOMContentLoaded', () => {
   const header = `
-    <nav class="navbar navbar-expand-lg navbar-dark bg-dark shadow-sm">
+    <nav class="navbar navbar-expand-lg navbar-dark shadow-sm" style="background-color: #001F5B;">
       <div class="container">
         <a class="navbar-brand fw-bold" href="index.html"><i class="bi bi-pie-chart-fill me-2"></i>Dorian Miletić</a>
         <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
