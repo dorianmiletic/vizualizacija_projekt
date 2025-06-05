@@ -76,6 +76,7 @@
             <option value="^N100">Euronext 100 (^N100)</option>
           </select>
           <button id="play" class="btn btn-primary mt-3 w-100">Pokreni</button>
+          <button id="stop" class="btn btn-danger mt-2 w-100" disabled>Zaustavi</button>
           <button id="reset" class="btn btn-secondary mt-2 w-100">Resetiraj</button>
         </div>
       </div>
@@ -106,7 +107,10 @@
     const tooltip = d3.select("#tooltip");
 
     let fullData = [];
-    let animInterval;
+    let animInterval = null;
+    let isAnimating = false;
+    let currentYear = 2008;
+    let selectedIndices = [];
 
     Promise.all(years.map(y => d3.csv(`data_${y}.csv`))).then(files => {
       files.forEach((data, i) => {
@@ -127,7 +131,13 @@
         });
       });
 
+      // Ispis dostupnih indeksa za dijagnostiku
+      console.log("Available tickers in select:", Array.from(document.getElementById("tickerSelect").options).map(o => o.value));
+
       init(processed);
+    }).catch(error => {
+      console.error("Error loading CSV files:", error);
+      alert("Greška pri učitavanju podataka. Provjerite jesu li datoteke 'data_2008.csv' do 'data_2023.csv' dostupne.");
     });
 
     function init(data) {
@@ -152,25 +162,35 @@
 
       const linesGroup = svg.append("g").attr("class", "lines");
 
-      document.getElementById("play").onclick = () => {
-        const selected = Array.from(document.getElementById("tickerSelect").selectedOptions).map(o => o.value);
-        if (!selected.length) return alert("Odaberi barem jedan indeks.");
+      const playButton = document.getElementById("play");
+      const stopButton = document.getElementById("stop");
+      const resetButton = document.getElementById("reset");
 
-        linesGroup.selectAll("*").remove();
+      function updateButtonStates() {
+        playButton.disabled = isAnimating;
+        stopButton.disabled = !isAnimating;
+        console.log("Button states updated:", { isAnimating, currentYear });
+      }
+
+      function animateFromYear(startYear) {
+        if (isAnimating) return;
+        isAnimating = true;
+        updateButtonStates();
+
         if (animInterval) clearInterval(animInterval);
 
-        let currentYear = 2008;
-
-        const dataByTicker = d3.groups(data.filter(d => selected.includes(d.ticker)), d => d.ticker);
+        const dataByTicker = d3.groups(data.filter(d => selectedIndices.includes(d.ticker)), d => d.ticker);
         const line = d3.line().x(d => x(d.year)).y(d => y(d.close));
 
         animInterval = setInterval(() => {
           if (currentYear > 2023) {
             clearInterval(animInterval);
+            isAnimating = false;
+            updateButtonStates();
             return;
           }
 
-          const yearData = data.filter(d => d.year <= currentYear && selected.includes(d.ticker));
+          const yearData = data.filter(d => d.year <= currentYear && selectedIndices.includes(d.ticker));
           const grouped = d3.groups(yearData, d => d.ticker);
 
           // LINIJE
@@ -226,15 +246,48 @@
               .attr("cy", d => y(d.close))
           );
 
+          console.log("Animating year:", currentYear);
           currentYear++;
         }, 600);
+      }
+
+      playButton.onclick = () => {
+        selectedIndices = Array.from(document.getElementById("tickerSelect").selectedOptions).map(o => o.value);
+        if (!selectedIndices.length) return alert("Odaberi barem jedan indeks.");
+
+        // Ako su indeksi promijenjeni, resetiraj na 2008
+        const previousIndices = selectedIndices.join(",");
+        if (previousIndices !== selectedIndices.join(",")) {
+          currentYear = 2008;
+          linesGroup.selectAll("*").remove();
+        }
+
+        animateFromYear(currentYear);
       };
 
-      document.getElementById("reset").onclick = () => {
-        linesGroup.selectAll("*").remove();
-        if (animInterval) clearInterval(animInterval);
-        tooltip.style("opacity", 0);
+      stopButton.onclick = () => {
+        if (animInterval) {
+          clearInterval(animInterval);
+          isAnimating = false;
+          updateButtonStates();
+          console.log("Animation paused at year:", currentYear);
+        }
       };
+
+      resetButton.onclick = () => {
+        linesGroup.selectAll("*").remove();
+        if (animInterval) {
+          clearInterval(animInterval);
+          isAnimating = false;
+        }
+        currentYear = 2008;
+        selectedIndices = [];
+        updateButtonStates();
+        tooltip.style("opacity", 0);
+        console.log("Animation reset");
+      };
+
+      updateButtonStates();
     }
   </script>
 </body>
