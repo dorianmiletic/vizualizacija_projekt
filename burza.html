@@ -19,6 +19,7 @@
       border-radius: 8px;
       padding: 10px;
       margin-top: 20px;
+      overflow-x: auto;
     }
 
     .tooltip {
@@ -50,6 +51,31 @@
       margin-top: 20px;
       margin-bottom: 30px;
     }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+
+    .legend-color {
+      width: 15px;
+      height: 15px;
+      margin-right: 8px;
+      display: inline-block;
+    }
+
+    .legend-text {
+      font-size: 12px;
+    }
+
+    #chart svg {
+      cursor: grab;
+    }
+
+    #chart svg:active {
+      cursor: grabbing;
+    }
   </style>
 </head>
 <body>
@@ -64,20 +90,24 @@
         <div class="sidebar">
           <label for="tickerSelect" class="form-label">Odaberi burzovne indekse:</label>
           <select id="tickerSelect" class="form-select" multiple>
-            <option value="^GSPC">S&P 500 (^GSPC)</option>
-            <option value="^IXIC">NASDAQ (^IXIC)</option>
-            <option value="^DJI">Dow Jones (^DJI)</option>
-            <option value="^FTSE">FTSE (^FTSE)</option>
-            <option value="^N225">Nikkei (^N225)</option>
-            <option value="000001.SS">SSE (000001.SS)</option>
-            <option value="^NSEI">NSEI (^NSEI)</option>
-            <option value="^BSESN">BSE Sensex (^BSESN)</option>
-            <option value="^NYA">NYSE (^NYA)</option>
-            <option value="^N100">Euronext 100 (^N100)</option>
+            <option value="^NYA">NYSE Composite (New York Stock Exchange)</option>
+            <option value="^IXIC">NASDAQ Composite</option>
+            <option value="^FTSE">FTSE 100 Index (Financial Times Stock Exchange, UK)</option>
+            <option value="^NSEI">Nifty 50 (National Stock Exchange of India)</option>
+            <option value="^BSESN">BSE SENSEX (Bombay Stock Exchange, India)</option>
+            <option value="^N225">Nikkei 225 (Japan)</option>
+            <option value="000001.SS">SSE Composite Index (Shanghai Stock Exchange)</option>
+            <option value="^N100">Euronext 100 (European Stock Exchange)</option>
+            <option value="^DJI">Dow Jones Industrial Average (USA)</option>
+            <option value="^GSPC">S&P 500 Index (USA)</option>
+            <option value="GC=F">Gold Futures</option>
+            <option value="CL=F">Crude Oil Futures</option>
           </select>
           <button id="play" class="btn btn-primary mt-3 w-100">Pokreni</button>
           <button id="stop" class="btn btn-danger mt-2 w-100" disabled>Zaustavi</button>
           <button id="reset" class="btn btn-secondary mt-2 w-100">Resetiraj</button>
+          <button id="resetZoom" class="btn btn-outline-secondary mt-2 w-100" disabled>Resetiraj zoom</button>
+          <div id="legend" class="mt-3"></div>
         </div>
       </div>
     </div>
@@ -88,12 +118,30 @@
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
   <script src="layout.js"></script>
   <script>
-    const allTickers = ['^GSPC', '^IXIC', '^DJI', '^FTSE', '^N225', '000001.SS', '^NSEI', '^BSESN', '^NYA', '^N100'];
+    const allTickers = ['^NYA', '^IXIC', '^FTSE', '^NSEI', '^BSESN', '^N225', '000001.SS', '^N100', '^DJI', '^GSPC', 'GC=F', 'CL=F'];
+    const tickerNames = {
+      '^NYA': 'NYSE Composite (New York Stock Exchange)',
+      '^IXIC': 'NASDAQ Composite',
+      '^FTSE': 'FTSE 100 Index (Financial Times Stock Exchange, UK)',
+      '^NSEI': 'Nifty 50 (National Stock Exchange of India)',
+      '^BSESN': 'BSE SENSEX (Bombay Stock Exchange, India)',
+      '^N225': 'Nikkei 225 (Japan)',
+      '000001.SS': 'SSE Composite Index (Shanghai Stock Exchange)',
+      '^N100': 'Euronext 100 (European Stock Exchange)',
+      '^DJI': 'Dow Jones Industrial Average (USA)',
+      '^GSPC': 'S&P 500 Index (USA)',
+      'GC=F': 'Gold Futures',
+      'CL=F': 'Crude Oil Futures'
+    };
     const years = d3.range(2008, 2024);
-    const colors = d3.scaleOrdinal().domain(allTickers).range(d3.schemeTableau10);
+    const colors = d3.scaleOrdinal().domain(allTickers).range([
+      ...d3.schemeTableau10,
+      '#8B008B', // Dodatna boja za GC=F (tamno ljubičasta)
+      '#FFD700'  // Dodatna boja za CL=F (zlatna)
+    ]);
 
-    const svgWidth = 900, svgHeight = 500;
-    const margin = { top: 40, right: 20, bottom: 50, left: 60 };
+    const svgWidth = 1100, svgHeight = 500;
+    const margin = { top: 50, right: 100, bottom: 50, left: 70 };
     const width = svgWidth - margin.left - margin.right;
     const height = svgHeight - margin.top - margin.bottom;
 
@@ -111,6 +159,10 @@
     let isAnimating = false;
     let currentYear = 2008;
     let selectedIndices = [];
+    let xScale = d3.scaleLinear().domain([2008, 2023.5]).range([0, width]);
+    let yScale = null;
+    let xAxis = null;
+    let yAxis = null;
 
     Promise.all(years.map(y => d3.csv(`data_${y}.csv`))).then(files => {
       files.forEach((data, i) => {
@@ -122,6 +174,15 @@
         fullData.push(...data.filter(d => allTickers.includes(d.Ticker)));
       });
 
+      // Provjera dostupnosti podataka za tickere
+      const availableTickers = [...new Set(fullData.map(d => d.Ticker))];
+      console.log("Available tickers in CSV data:", availableTickers);
+      allTickers.forEach(ticker => {
+        if (!availableTickers.includes(ticker)) {
+          console.warn(`No data found for ticker: ${ticker} (${tickerNames[ticker]})`);
+        }
+      });
+
       const grouped = d3.groups(fullData, d => d.Ticker, d => d.Year);
       const processed = [];
       grouped.forEach(([ticker, yearGroup]) => {
@@ -131,8 +192,9 @@
         });
       });
 
-      // Ispis dostupnih indeksa za dijagnostiku
-      console.log("Available tickers in select:", Array.from(document.getElementById("tickerSelect").options).map(o => o.value));
+      // Ispis dostupnih indeksa i SVG dimenzija za dijagnostiku
+      console.log("Available tickers in select:", Array.from(document.getElementById("tickerSelect").options).map(o => `${o.value}: ${o.text}`));
+      console.log("SVG dimensions:", { svgWidth, width, x_2023: xScale(2023) });
 
       init(processed);
     }).catch(error => {
@@ -141,11 +203,17 @@
     });
 
     function init(data) {
-      const x = d3.scaleLinear().domain([2008, 2023]).range([0, width]);
-      const y = d3.scaleLinear().domain([0, d3.max(data, d => d.close) * 1.1]).range([height, 0]);
+      yScale = d3.scaleLinear().domain([0, d3.max(data, d => d.close) * 1.1]).range([height, 0]);
 
-      svg.append("g").attr("transform", `translate(0,${height})`).call(d3.axisBottom(x).tickFormat(d3.format("d")));
-      svg.append("g").call(d3.axisLeft(y));
+      // Definiraj osi
+      xAxis = svg.append("g")
+        .attr("class", "x-axis")
+        .attr("transform", `translate(0,${height})`)
+        .call(d3.axisBottom(xScale).tickFormat(d3.format("d")));
+
+      yAxis = svg.append("g")
+        .attr("class", "y-axis")
+        .call(d3.axisLeft(yScale));
 
       svg.append("text")
         .attr("x", width / 2)
@@ -162,15 +230,111 @@
 
       const linesGroup = svg.append("g").attr("class", "lines");
 
+      // Definiraj clip-path za ograničavanje linija i kruži unutar grafikona
+      svg.append("clipPath")
+        .attr("id", "clip")
+        .append("rect")
+        .attr("x", 0)
+        .attr("y", 0)
+        .attr("width", width)
+        .attr("height", height);
+
+      linesGroup.attr("clip-path", "url(#clip)");
+
       const playButton = document.getElementById("play");
       const stopButton = document.getElementById("stop");
       const resetButton = document.getElementById("reset");
+      const resetZoomButton = document.getElementById("resetZoom");
+      const legendContainer = d3.select("#legend");
+
+      let zoomed = false;
 
       function updateButtonStates() {
         playButton.disabled = isAnimating;
         stopButton.disabled = !isAnimating;
-        console.log("Button states updated:", { isAnimating, currentYear });
+        resetZoomButton.disabled = !zoomed;
+        console.log("Button states updated:", { isAnimating, currentYear, zoomed });
       }
+
+      function createLegend(selectedTickers) {
+        legendContainer.selectAll("*").remove();
+        console.log("Creating legend for tickers:", selectedTickers.map(t => `${t}: ${tickerNames[t]}`));
+
+        const legendItems = legendContainer.selectAll(".legend-item")
+          .data(selectedTickers)
+          .enter()
+          .append("div")
+          .attr("class", "legend-item");
+
+        legendItems.append("span")
+          .attr("class", "legend-color")
+          .style("background-color", d => colors(d));
+
+        legendItems.append("span")
+          .attr("class", "legend-text")
+          .text(d => tickerNames[d]);
+      }
+
+      // Zoom funkcionalnost
+      const zoom = d3.zoom()
+        .scaleExtent([1, 10])
+        .translateExtent([[0, 0], [width, height]])
+        .extent([[0, 0], [width, height]])
+        .on("zoom", zoomedFunction)
+        .on("start", () => {
+          if (animInterval) {
+            clearInterval(animInterval);
+            isAnimating = false;
+            updateButtonStates();
+            console.log("Animation paused due to zoom interaction");
+          }
+        });
+
+      function zoomedFunction(event) {
+        zoomed = true;
+        updateButtonStates();
+
+        const newXScale = event.transform.rescaleX(xScale);
+        const newYScale = event.transform.rescaleY(yScale);
+
+        xAxis.call(d3.axisBottom(newXScale).tickFormat(d3.format("d")));
+        yAxis.call(d3.axisLeft(newYScale));
+
+        const line = d3.line().x(d => newXScale(d.year)).y(d => newYScale(d.close));
+        linesGroup.selectAll("path")
+          .attr("d", d => line(d[1]));
+
+        linesGroup.selectAll("circle")
+          .attr("cx", d => newXScale(d.year))
+          .attr("cy", d => newYScale(d.close));
+
+        console.log("Zoom applied:", { scale: event.transform.k, translate: [event.transform.x, event.transform.y] });
+      }
+
+      d3.select("#chart svg").call(zoom);
+
+      resetZoomButton.onclick = () => {
+        d3.select("#chart svg")
+          .transition()
+          .duration(500)
+          .call(zoom.transform, d3.zoomIdentity);
+
+        zoomed = false;
+        updateButtonStates();
+
+        xAxis.call(d3.axisBottom(xScale).tickFormat(d3.format("d")));
+        yAxis.call(d3.axisLeft(yScale));
+
+        const line = d3.line().x(d => xScale(d.year)).y(d => yScale(d.close));
+        linesGroup.selectAll("path")
+          .attr("d", d => line(d[1]));
+
+        linesGroup.selectAll("circle")
+          .attr("cx", d => xScale(d.year))
+          .attr("cy", d => yScale(d.close));
+
+        console.log("Zoom reset");
+      };
 
       function animateFromYear(startYear) {
         if (isAnimating) return;
@@ -180,7 +344,7 @@
         if (animInterval) clearInterval(animInterval);
 
         const dataByTicker = d3.groups(data.filter(d => selectedIndices.includes(d.ticker)), d => d.ticker);
-        const line = d3.line().x(d => x(d.year)).y(d => y(d.close));
+        const line = d3.line().x(d => xScale(d.year)).y(d => yScale(d.close));
 
         animInterval = setInterval(() => {
           if (currentYear > 2023) {
@@ -216,24 +380,25 @@
               .attr("d", d => line(d[1]))
           );
 
-          // KRUGOVI
-          const circles = linesGroup.selectAll("circle").data(
-            grouped.map(([ticker, values]) => {
-              const last = values[values.length - 1];
-              return { ...last, ticker };
-            }),
-            d => d.ticker
-          );
+          // KRUGOVI ZA SVE GODINE
+          const circles = linesGroup.selectAll("circle")
+            .data(
+              grouped.flatMap(([ticker, values]) => {
+                console.log("Circles rendered for ticker:", ticker, "Count:", values.length);
+                return values.map(d => ({ ...d, ticker }));
+              }),
+              d => `${d.ticker}-${d.year}`
+            );
 
           circles.join(
             enter => enter.append("circle")
               .attr("r", 0)
               .attr("fill", d => colors(d.ticker))
-              .attr("cx", d => x(d.year))
-              .attr("cy", d => y(d.close))
+              .attr("cx", d => xScale(d.year))
+              .attr("cy", d => yScale(d.close))
               .on("mouseover", (event, d) => {
                 tooltip.transition().duration(200).style("opacity", 0.9);
-                tooltip.html(`${d.ticker} (${d.year})<br>${d.close.toFixed(2)}`)
+                tooltip.html(`${tickerNames[d.ticker]} (${d.year})<br>${d.close.toFixed(2)}`)
                   .style("left", (event.pageX + 10) + "px")
                   .style("top", (event.pageY - 28) + "px");
               })
@@ -242,26 +407,26 @@
               .attr("r", 4),
 
             update => update.transition().duration(500)
-              .attr("cx", d => x(d.year))
-              .attr("cy", d => y(d.close))
+              .attr("cx", d => xScale(d.year))
+              .attr("cy", d => yScale(d.close))
           );
 
           console.log("Animating year:", currentYear);
           currentYear++;
-        }, 600);
+        }, 750);
       }
 
       playButton.onclick = () => {
         selectedIndices = Array.from(document.getElementById("tickerSelect").selectedOptions).map(o => o.value);
         if (!selectedIndices.length) return alert("Odaberi barem jedan indeks.");
 
-        // Ako su indeksi promijenjeni, resetiraj na 2008
         const previousIndices = selectedIndices.join(",");
         if (previousIndices !== selectedIndices.join(",")) {
           currentYear = 2008;
           linesGroup.selectAll("*").remove();
         }
 
+        createLegend(selectedIndices);
         animateFromYear(currentYear);
       };
 
@@ -276,19 +441,30 @@
 
       resetButton.onclick = () => {
         linesGroup.selectAll("*").remove();
+        legendContainer.selectAll("*").remove();
         if (animInterval) {
           clearInterval(animInterval);
           isAnimating = false;
         }
         currentYear = 2008;
         selectedIndices = [];
+        d3.select("#chart svg")
+          .transition()
+          .duration(500)
+          .call(zoom.transform, d3.zoomIdentity);
+        zoomed = false;
+        xAxis.call(d3.axisBottom(xScale).tickFormat(d3.format("d")));
+        yAxis.call(d3.axisLeft(yScale));
         updateButtonStates();
         tooltip.style("opacity", 0);
-        console.log("Animation reset");
+        console.log("Animation, legend, and zoom reset");
       };
 
       updateButtonStates();
     }
   </script>
+  <footer class="text-center text-muted py-4 border-top mt-5">
+    © 2025 - FERIT
+  </footer>
 </body>
 </html>

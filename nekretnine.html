@@ -56,9 +56,9 @@
         <div id="chart-inflation" class="chart-container bg-white shadow rounded p-3"></div>
       </div>
       <div class="col-md-3">
-        <h5>O projektu</h5>
-        <p>Prikaz trenda cijena nekretnina (Case-Shiller) i inflacije (CPI) u SAD-u od 1987. do danas.</p>
-        <p>Izvori: <code>CSUSHPISA.csv</code>, <code>US_inflation_rates.csv</code></p>
+        <h5>O prikazu:</h5>
+        <p>Case–Shiller Index je skup indeksa koji mjeri promjene cijena stambenih nekretnina u SAD-u. Razvili su ga ekonomisti Karl Case i Robert Shiller.</p>
+       
         <div class="filter-container">
           <h6>Filteri</h6>
           <div>
@@ -246,7 +246,7 @@
             .style("left", (event.pageX + 10) + "px")
             .style("top", (event.pageY - 28) + "px");
 
-          // Istakni točku na inflacijskom grafu
+          // Istakni točku na drugome grafu
           svgInflation.selectAll(".inflation-point")
             .filter(i => formatDate(i.date) === formatDate(d.date))
             .attr("class", "inflation-point highlight");
@@ -422,5 +422,8 @@
       alert("Greška pri učitavanju CSV-ova. Provjeri jesu li datoteke u direktoriju.");
     });
   </script>
+   <footer class="text-center text-muted py-4 border-top mt-5">
+    © 2025 - FERIT
+  </footer>
 </body>
 </html>
