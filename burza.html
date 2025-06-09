@@ -2,7 +2,7 @@
 <html lang="hr">
 <head>
   <meta charset="UTF-8" />
-  <title>Burza - Stock Index Animation</title>
+  <title>Burza</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet" />
   <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css" rel="stylesheet" />
@@ -81,7 +81,7 @@
 <body>
   <div id="header"></div>
   <div class="container-fluid">
-    <h2 class="text-center">Stock Index Animation (2008–2023)</h2>
+    <h2 class="text-center">Stock Index (Top 12 Stocks)</h2>
     <div class="row">
       <div class="col-md-9">
         <div id="chart"></div>
@@ -136,8 +136,8 @@
     const years = d3.range(2008, 2024);
     const colors = d3.scaleOrdinal().domain(allTickers).range([
       ...d3.schemeTableau10,
-      '#8B008B', // Dodatna boja za GC=F (tamno ljubičasta)
-      '#FFD700'  // Dodatna boja za CL=F (zlatna)
+      '#8B008B', 
+      '#FFD700'  
     ]);
 
     const svgWidth = 1100, svgHeight = 500;
@@ -174,14 +174,7 @@
         fullData.push(...data.filter(d => allTickers.includes(d.Ticker)));
       });
 
-      // Provjera dostupnosti podataka za tickere
-      const availableTickers = [...new Set(fullData.map(d => d.Ticker))];
-      console.log("Available tickers in CSV data:", availableTickers);
-      allTickers.forEach(ticker => {
-        if (!availableTickers.includes(ticker)) {
-          console.warn(`No data found for ticker: ${ticker} (${tickerNames[ticker]})`);
-        }
-      });
+      
 
       const grouped = d3.groups(fullData, d => d.Ticker, d => d.Year);
       const processed = [];
@@ -192,20 +185,18 @@
         });
       });
 
-      // Ispis dostupnih indeksa i SVG dimenzija za dijagnostiku
-      console.log("Available tickers in select:", Array.from(document.getElementById("tickerSelect").options).map(o => `${o.value}: ${o.text}`));
-      console.log("SVG dimensions:", { svgWidth, width, x_2023: xScale(2023) });
+      
 
       init(processed);
     }).catch(error => {
       console.error("Error loading CSV files:", error);
-      alert("Greška pri učitavanju podataka. Provjerite jesu li datoteke 'data_2008.csv' do 'data_2023.csv' dostupne.");
+      
     });
 
     function init(data) {
       yScale = d3.scaleLinear().domain([0, d3.max(data, d => d.close) * 1.1]).range([height, 0]);
 
-      // Definiraj osi
+      
       xAxis = svg.append("g")
         .attr("class", "x-axis")
         .attr("transform", `translate(0,${height})`)
@@ -230,7 +221,7 @@
 
       const linesGroup = svg.append("g").attr("class", "lines");
 
-      // Definiraj clip-path za ograničavanje linija i kruži unutar grafikona
+      // Definiraj clip-path za ograničavanje linija
       svg.append("clipPath")
         .attr("id", "clip")
         .append("rect")
@@ -253,12 +244,12 @@
         playButton.disabled = isAnimating;
         stopButton.disabled = !isAnimating;
         resetZoomButton.disabled = !zoomed;
-        console.log("Button states updated:", { isAnimating, currentYear, zoomed });
+        
       }
 
       function createLegend(selectedTickers) {
         legendContainer.selectAll("*").remove();
-        console.log("Creating legend for tickers:", selectedTickers.map(t => `${t}: ${tickerNames[t]}`));
+       
 
         const legendItems = legendContainer.selectAll(".legend-item")
           .data(selectedTickers)
@@ -275,7 +266,7 @@
           .text(d => tickerNames[d]);
       }
 
-      // Zoom funkcionalnost
+      
       const zoom = d3.zoom()
         .scaleExtent([1, 10])
         .translateExtent([[0, 0], [width, height]])
@@ -286,7 +277,7 @@
             clearInterval(animInterval);
             isAnimating = false;
             updateButtonStates();
-            console.log("Animation paused due to zoom interaction");
+            
           }
         });
 
@@ -308,7 +299,7 @@
           .attr("cx", d => newXScale(d.year))
           .attr("cy", d => newYScale(d.close));
 
-        console.log("Zoom applied:", { scale: event.transform.k, translate: [event.transform.x, event.transform.y] });
+       
       }
 
       d3.select("#chart svg").call(zoom);
@@ -333,7 +324,7 @@
           .attr("cx", d => xScale(d.year))
           .attr("cy", d => yScale(d.close));
 
-        console.log("Zoom reset");
+        
       };
 
       function animateFromYear(startYear) {
@@ -380,11 +371,11 @@
               .attr("d", d => line(d[1]))
           );
 
-          // KRUGOVI ZA SVE GODINE
+          // KRUGOVI
           const circles = linesGroup.selectAll("circle")
             .data(
               grouped.flatMap(([ticker, values]) => {
-                console.log("Circles rendered for ticker:", ticker, "Count:", values.length);
+                
                 return values.map(d => ({ ...d, ticker }));
               }),
               d => `${d.ticker}-${d.year}`
@@ -411,9 +402,9 @@
               .attr("cy", d => yScale(d.close))
           );
 
-          console.log("Animating year:", currentYear);
+          
           currentYear++;
-        }, 750);
+        }, 750); //brzina animacije
       }
 
       playButton.onclick = () => {
@@ -435,7 +426,7 @@
           clearInterval(animInterval);
           isAnimating = false;
           updateButtonStates();
-          console.log("Animation paused at year:", currentYear);
+          
         }
       };
 
@@ -457,7 +448,7 @@
         yAxis.call(d3.axisLeft(yScale));
         updateButtonStates();
         tooltip.style("opacity", 0);
-        console.log("Animation, legend, and zoom reset");
+        
       };
 
       updateButtonStates();

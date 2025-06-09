@@ -81,7 +81,7 @@
             <input type="text" id="search-bar" class="form-control search-bar" placeholder="Upiši naziv države...">
             <label for="country-select" class="form-label mt-2">Odaberi državu(e):</label>
             <select id="country-select" class="form-select mb-3" multiple>
-              <!-- Popunit će se dinamički -->
+              <!-- dodanje se dinamicki -->
             </select>
           </div>
         </div>
@@ -113,7 +113,7 @@
     const endYear = 2023;
     const colors = d3.scaleOrdinal().range(d3.schemeTableau10);
 
-    // Funkcija za čišćenje podataka
+    
     function cleanData(data, isMetadata) {
       const filteredData = data.filter(d => d["Country Code"] && d["Country Code"] !== "");
       return filteredData.map(d => {
@@ -127,12 +127,12 @@
       });
     }
 
-    // Funkcija za dohvaćanje jedinstvenih vrijednosti
+    
     function getUniqueValues(data, key) {
       return [...new Set(data.map(d => d[key]).filter(d => d))].sort();
     }
 
-    // Funkcija za crtanje linijskog grafikona za više država
+   
     function drawLineChart(selectedCountries) {
       svg.selectAll("*").remove();
       errorDiv.text("");
@@ -159,7 +159,7 @@
         return;
       }
 
-      // Priprema podataka za svaku državu
+      
       const dataByCountry = countryData.map(country => ({
         country: country["Country Name"],
         values: d3.range(startYear, endYear + 1).map(year => ({
@@ -168,7 +168,7 @@
         })).filter(d => d.growth !== null)
       }));
 
-      // Provjera ima li podataka
+      
       const hasData = dataByCountry.some(d => d.values.length > 0);
       if (!hasData) {
         svg.append("text")
@@ -180,7 +180,7 @@
         return;
       }
 
-      // Skale
+      
       const x = d3.scaleLinear()
         .domain([startYear, endYear])
         .range([0, width]);
@@ -188,15 +188,15 @@
       const allGrowths = dataByCountry.flatMap(d => d.values.map(v => v.growth)).filter(g => g !== null);
       const y = d3.scaleLinear()
         .domain([
-          Math.min(0, d3.min(allGrowths) - 1), // Uključuje nulu i minimalnu vrijednost
-          Math.max(0, d3.max(allGrowths) + 1)  // Uključuje nulu i maksimalnu vrijednost
+          Math.min(0, d3.min(allGrowths) - 1), // Uključuje 0 i min
+          Math.max(0, d3.max(allGrowths) + 1)  // Uključuje 0 i max
         ])
         .nice()
         .range([height, 0]);
 
-      // Osi
+      // osi
       svg.append("g")
-        .attr("transform", `translate(0,${y(0)})`) // X-os na y=0
+        .attr("transform", `translate(0,${y(0)})`) // x os pocinje od y=0
         .call(d3.axisBottom(x).tickFormat(d3.format("d")));
 
       svg.append("g")
@@ -215,7 +215,7 @@
         .attr("text-anchor", "middle")
         .text("Rast BDP-a (%)");
 
-      // Linije i točke
+      
       const line = d3.line()
         .x(d => x(d.year))
         .y(d => y(d.growth))
@@ -260,7 +260,7 @@
           tooltip.transition().duration(500).style("opacity", 0);
         });
 
-      // Legenda
+      
       legendDiv.selectAll(".legend-item")
         .data(selectedCountries)
         .enter()
@@ -272,7 +272,7 @@
         `);
     }
 
-    // Učitavanje podataka i postavljanje filtera
+    
     Promise.all([
       d3.csv("Metadata_Country_API_NY.GDP.MKTP.KD.ZG_DS2_en_csv_v2_85160.csv"),
       d3.csv("drzave.csv")
@@ -287,7 +287,7 @@
 
       const countries = getUniqueValues(gdpData, "Country Name");
 
-      // Popuni country select
+      //dobi imena zemalja za dropdown
       const countrySelect = d3.select("#country-select");
       countrySelect.selectAll("option")
         .data(countries)
@@ -296,7 +296,7 @@
         .attr("value", d => d)
         .text(d => d);
 
-      // Traka za pretraživanje
+      
       const searchBar = d3.select("#search-bar");
       searchBar.on("input", function() {
         const searchTerm = this.value.toLowerCase();
@@ -304,16 +304,16 @@
           .style("display", d => d.toLowerCase().includes(searchTerm) ? null : "none");
       });
 
-      // Oslušivač za promjenu odabira
+      
       countrySelect.on("change", function() {
         const selectedCountries = Array.from(this.selectedOptions).map(o => o.value);
         drawLineChart(selectedCountries);
       });
 
-      // Inicijalno crtanje
+      
       drawLineChart([]);
     }).catch(error => {
-      console.error("Error loading CSV files:", error);
+      
       errorDiv.text("Greška pri učitavanju CSV datoteka. Provjerite jesu li datoteke dostupne i ispravne.");
     });
   </script>

@@ -2,7 +2,7 @@
 <html lang="hr">
 <head>
   <meta charset="UTF-8" />
-  <title>Nekretnine i Inflacija | Vizualizacija</title>
+  <title>Nekretnine i Inflacija</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <script src="https://d3js.org/d3.v7.min.js"></script>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet" />
@@ -113,22 +113,20 @@
     let inflationData = [];
     let slider = null;
 
-    // Funkcija za crtanje grafika
+    
     function drawCharts(filteredHousing, filteredInflation) {
-      console.log("Crta se Case-Shiller:", filteredHousing.length, "redaka");
-      console.log("Crta se inflacija:", filteredInflation.length, "redaka");
-
-      // Očisti grafike
+      
+      // ocisti grafove
       svgHousing.selectAll("*").remove();
       svgInflation.selectAll("*").remove();
 
-      // Zajednička x-skala
+      // zajednicka x skala
       const allDates = [...filteredHousing.map(d => d.date), ...filteredInflation.map(d => d.date)];
       const x = d3.scaleTime()
         .domain(d3.extent(allDates))
         .range([0, width]);
 
-      // Y-skale
+      // y skala
       const yHousing = d3.scaleLinear()
         .domain([0, d3.max(filteredHousing, d => d.value) * 1.05])
         .range([height, 0]);
@@ -156,7 +154,7 @@
       svgInflation.append("g")
         .call(yAxisInflation);
 
-      // Oznake osi
+      //oznake osi
       svgHousing.append("text")
         .attr("x", width / 2)
         .attr("y", height + 40)
@@ -183,7 +181,7 @@
         .attr("text-anchor", "middle")
         .text("CPI");
 
-      // Linije
+      //lniije
       const lineHousing = d3.line()
         .x(d => x(d.date))
         .y(d => yHousing(d.value))
@@ -208,7 +206,7 @@
         .attr("stroke-width", 2)
         .attr("d", lineInflation);
 
-      // Animacija linija
+      //animacija linija
       const totalLengthHousing = pathHousing.node().getTotalLength();
       pathHousing
         .attr("stroke-dasharray", totalLengthHousing + " " + totalLengthHousing)
@@ -227,7 +225,7 @@
         .ease(d3.easeCubic)
         .attr("stroke-dashoffset", 0);
 
-      // Točke s tooltipovima
+      // tooltipvoi za točke
       const formatDate = d3.timeFormat("%Y-%m-%d");
       svgHousing.selectAll(".housing-point")
         .data(filteredHousing.filter((_, i) => i % 12 === 0))
@@ -274,7 +272,7 @@
             .style("left", (event.pageX + 10) + "px")
             .style("top", (event.pageY - 28) + "px");
 
-          // Istakni točku na Case-Shiller grafu
+          // istakni točku na Case-Shiller grafu
           svgHousing.selectAll(".housing-point")
             .filter(h => formatDate(h.date) === formatDate(d.date))
             .attr("class", "housing-point highlight");
@@ -286,21 +284,14 @@
         });
     }
 
-    // Funkcija za filtriranje podataka
+    //filtriranje podataka
     function filterData() {
-      console.log("Pokreće se filtriranje...");
-      if (!slider) {
-        console.error("Slider nije inicijaliziran!");
-        alert("Klizač za godine nije spreman. Pričekaj da se podaci učitaju.");
-        return;
-      }
-
       let filteredHousing = housingData;
       let filteredInflation = inflationData;
 
-      // Filter za raspon godina
+      
       const yearRange = slider.noUiSlider.get().map(Number);
-      console.log("Raspon godina:", yearRange);
+      
       filteredHousing = filteredHousing.filter(d => {
         const year = d.date.getFullYear();
         return year >= yearRange[0] && year <= yearRange[1];
@@ -310,24 +301,22 @@
         return year >= yearRange[0] && year <= yearRange[1];
       });
 
-      // Filter za raspon Case-Shiller
+      //filter za raspon Case-Shiller
       const minHousingInput = document.getElementById("minHousing-slide").value;
       const maxHousingInput = document.getElementById("maxHousing-slide").value;
       const minHousing = minHousingInput ? +minHousingInput : -Infinity;
       const maxHousing = maxHousingInput ? +maxHousingInput : Infinity;
-      console.log("Raspon Case-Shiller:", { minHousing, maxHousing });
+      
       filteredHousing = filteredHousing.filter(d => d.value >= minHousing && d.value <= maxHousing);
 
-      // Filter za raspon CPI
+      //filter za raspon CPI
       const minInflationInput = document.getElementById("minInflation-slide").value;
       const maxInflationInput = document.getElementById("maxInflation-slide").value;
       const minInflation = minInflationInput ? +minInflationInput : -Infinity;
       const maxInflation = maxInflationInput ? +maxInflationInput : Infinity;
-      console.log("Raspon CPI:", { minInflation, maxInflation });
+     
       filteredInflation = filteredInflation.filter(d => d.value >= minInflation && d.value <= maxInflation);
 
-      console.log("Filtrirani Case-Shiller:", filteredHousing.length, "redaka");
-      console.log("Filtrirani CPI:", filteredInflation.length, "redaka");
 
       if (filteredHousing.length === 0 || filteredInflation.length === 0) {
         alert("Nema podataka za odabrane filtere. Podesi filtere.");
@@ -337,12 +326,12 @@
       drawCharts(filteredHousing, filteredInflation);
     }
 
-    // Učitaj oba CSV-a
+    
     Promise.all([
       d3.csv("CSUSHPISA.csv"),
       d3.csv("US_inflation_rates.csv")
     ]).then(([housing, inflation]) => {
-      // Parsiraj Case-Shiller
+      //parsiraj case-shiller
       housing = housing.filter(d => {
         if (!d.observation_date || !d.CSUSHPISA || isNaN(+d.CSUSHPISA)) return false;
         const date = d3.timeParse("%Y-%m-%d")(d.observation_date.trim());
@@ -353,7 +342,7 @@
         d.value = +d.CSUSHPISA;
       });
 
-      // Parsiraj inflaciju
+      //parsiraj inflaciju
       inflation = inflation.filter(d => {
         if (!d.date || !d.value || isNaN(+d.value)) return false;
         const date = d3.timeParse("%Y-%m-%d")(d.date.trim());
@@ -364,31 +353,30 @@
         d.value = +d.value;
       });
 
-      console.log("Parsirani Case-Shiller:", housing.slice(0, 5));
-      console.log("Parsirani CPI:", inflation.slice(0, 5));
+      
 
-      if (housing.length === 0 || inflation.length === 0) {
-        alert("Nema valjanih podataka u CSV-ovima nakon filtriranja od 1987. Provjeri format podataka.");
-        return;
-      }
-      if (housing.some(d => !d.date) || inflation.some(d => !d.date)) {
-        alert("Greška u parsiranju datuma. Provjeri stupce datuma.");
-        return;
-      }
-      if (housing.some(d => isNaN(d.value)) || inflation.some(d => isNaN(d.value))) {
-        alert("Greška u vrijednostima. Provjeri podatke.");
-        return;
-      }
+      // if (housing.length === 0 || inflation.length === 0) {
+      //   alert("Nema valjanih podataka u CSV-ovima nakon filtriranja od 1987. Provjeri format podataka.");
+      //   return;
+      // }
+      // if (housing.some(d => !d.date) || inflation.some(d => !d.date)) {
+      //   alert("Greška u parsiranju datuma. Provjeri stupce datuma.");
+      //   return;
+      // }
+      // if (housing.some(d => isNaN(d.value)) || inflation.some(d => isNaN(d.value))) {
+      //   alert("Greška u vrijednostima. Provjeri podatke.");
+      //   return;
+      // }
 
       housingData = housing;
       inflationData = inflation;
 
       drawCharts(housingData, inflationData);
 
-      // Inicijaliziraj klizač za godine
+      // inicijaliziraj klizač 
       slider = document.getElementById("year-slider");
       const allDates = [...housingData.map(d => d.date), ...inflationData.map(d => d.date)];
-      const minYear = 1987; // Fiksno od 1987.
+      const minYear = 1987; 
       const maxYear = d3.max(allDates, d => d.getFullYear());
       noUiSlider.create(slider, {
         start: [minYear, maxYear],
@@ -411,15 +399,13 @@
 
       slider.noUiSlider.on("change", filterData);
 
-      // Inicijaliziraj filter za vrijednosti
+      //inicijaliziraj filter za vrijednosti
       const applyButton = document.getElementById("apply-value-filter");
       applyButton.addEventListener("click", () => {
-        console.log("Kliknuto na Primijeni");
         filterData();
       });
     }).catch(error => {
-      console.error("Error loading CSV files:", error);
-      alert("Greška pri učitavanju CSV-ova. Provjeri jesu li datoteke u direktoriju.");
+      alert("Greška pri učitavanju CSV-ova");
     });
   </script>
    <footer class="text-center text-muted py-4 border-top mt-5">
